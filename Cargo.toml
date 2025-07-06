@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 egraph-serialize = { version = "0.1.0", features = ["graphviz"] }
 egg = { version = "0.10.0", features = ["serde-1"] }
+extraction-gym = { path = "extraction-gym"}
