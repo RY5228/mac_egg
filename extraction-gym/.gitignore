@@ -3,3 +3,7 @@ out.csv
 out.tsv
 output/
 out.json
+.github/
+.vscode/
+data/
+test_data/
