@@ -10,3 +10,4 @@ extraction-gym = { path = "extraction-gym"}
 indexmap = "2.10.0"
 anyhow = "1.0.98"
 rustc-hash = "1.1.0"
+aiger = "0.2.0"

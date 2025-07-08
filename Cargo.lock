@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "aiger"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd4c981a031c1f46215e39197f6cfbbb9200d457d6756716cd5aa7866f6a9f46"
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -363,6 +369,7 @@ checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 name = "mac_egg"
 version = "0.1.0"
 dependencies = [
+ "aiger",
  "anyhow",
  "egg",
  "egraph-serialize",

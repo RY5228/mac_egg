@@ -35,6 +35,7 @@ fn test() {
             .join("json/serialized_egraph_test.json"),
     )
     .unwrap();
+    #[cfg(target_os = "linux")]
     s.to_svg_file(
         env::current_dir()
             .unwrap()

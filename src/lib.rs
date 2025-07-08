@@ -1,6 +1,8 @@
 pub mod extractor;
 pub mod language;
 pub mod rule;
+pub mod io;
+mod netlist;
 
 use egg::*;
 pub use egraph_serialize::EGraph as SerializedEGraph;

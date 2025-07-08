@@ -5,6 +5,7 @@ define_language! {
         Bool(bool),
         "and" = And([Id; 2]),
         "not" = Not(Id),
+        Output(Symbol, Id),
         Symbol(Symbol),
     }
 }
