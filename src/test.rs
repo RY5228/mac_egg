@@ -23,6 +23,7 @@ fn test() {
     let result = ed.get_extractor().extract(&s, &s.root_eclasses);
     result.check(&s);
     println!("{:?}", result.choices);
+
     let extractor = Extractor::new(&egraph, AstSize);
     let (best_cost, best) = extractor.find_best(root);
     println!("egg result:");

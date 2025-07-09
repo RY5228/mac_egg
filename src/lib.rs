@@ -2,6 +2,7 @@ pub mod extractor;
 pub mod language;
 pub mod rule;
 pub mod io;
+mod egraph_roots;
 mod netlist;
 
 use egg::*;
@@ -11,10 +12,10 @@ use rustc_hash::FxHashSet;
 use std::fmt::Display;
 use std::ops::Index;
 
-pub fn egg_to_serialized_egraph<L, A>(egraph: &EGraph<L, A>, roots: &Vec<Id>) -> SerializedEGraph
+pub fn egg_to_serialized_egraph<L, N>(egraph: &EGraph<L, N>, roots: &Vec<Id>) -> SerializedEGraph
 where
     L: Language + Display,
-    A: Analysis<L>,
+    N: Analysis<L>,
 {
     use egraph_serialize::*;
     let mut out = EGraph::default();
@@ -40,6 +41,14 @@ where
         out.root_eclasses.push(ClassId::from(format!("{}", id)));
     }
     out
+}
+
+pub fn serialized_egraph_to_egg<L, A>(egraph: &SerializedEGraph) -> (EGraph<L, A>, Vec<Id>) 
+where
+    L: Language + Display,
+    A: Analysis<L>,
+{
+    todo!()
 }
 
 pub fn choose_result_in_egraph(

@@ -1,21 +1,22 @@
-use egg::{Analysis, EGraph, Id, Language};
+use egg::{Analysis, EGraph, Language};
+use petgraph::Graph;
+use petgraph::graph::NodeIndex;
+use crate::egraph_roots::EGraphRoots;
 
-#[derive(Clone)]
-pub struct CombinitionalNetlist<L: Language, N: Analysis<L, Data: Clone>> {
-    pub egraph: EGraph<L, N>,
-    pub roots: Vec<Id>,
+#[derive(Debug, Clone)]
+pub struct Netlist<N, E> {
+    pub graph: Graph<N, E>,
+    pub roots: Vec<NodeIndex>,
+    pub leaves: Vec<NodeIndex>,
 }
 
-impl<L, N> Default for CombinitionalNetlist<L, N>
-where
-    L: Language,
-    N: Analysis<L> + Default,
-    N::Data: Clone,
+impl<N, E> Default for Netlist<N, E>
 {
     fn default() -> Self {
         Self {
-            egraph: EGraph::default(),
-            roots: vec![],
+            graph: Default::default(),
+            roots: Default::default(),
+            leaves: Default::default(),
         }
     }
 }
