@@ -4,14 +4,11 @@ use crate::netlist::Netlist;
 use aiger::{Aiger, AigerError, Literal, Reader, RecordsIter};
 use egg::Id;
 use indexmap::IndexMap;
-use petgraph::{Incoming, Outgoing};
-use petgraph::data::Build;
+use petgraph::Incoming;
 use petgraph::graph::NodeIndex;
-use petgraph::visit::IntoEdgesDirected;
 use rustc_hash::FxHashMap;
 use std::fs::File;
-use std::ops::Index;
-use std::{env, io};
+use std::io;
 
 #[derive(Debug)]
 pub enum ReadError {
@@ -74,9 +71,9 @@ pub fn read_aag_to_netlist(path: &str) -> Result<Netlist<AigType, ()>, ReadError
             if symbol.type_spec != aiger::Symbol::Input {
                 return Err(ReadError::InvalidInputSymbol);
             }
-            AigType::Input((&symbol.symbol).into())
+            AigType::Symbol((&symbol.symbol).into())
         } else {
-            AigType::Input(format!("{:?}", input.variable()).into())
+            AigType::Symbol(format!("{:?}", input.variable()).into())
         };
         let nid = netlist.graph.add_node(symbol);
         variable_to_nid.insert(input.variable(), nid);
@@ -106,9 +103,9 @@ pub fn read_aag_to_netlist(path: &str) -> Result<Netlist<AigType, ()>, ReadError
             if symbol.type_spec != aiger::Symbol::Output {
                 return Err(ReadError::InvalidOutputSymbol);
             }
-            AigType::Output((&symbol.symbol).into())
+            AigType::Symbol((&symbol.symbol).into())
         } else {
-            AigType::Output(format!("{:?}", output.variable()).into())
+            AigType::Symbol(format!("{:?}", output.variable()).into())
         };
         let oid = netlist.graph.add_node(symbol);
         netlist.graph.add_edge(oid, iid, ());
@@ -287,6 +284,7 @@ fn parse_aag<T: io::Read>(records: RecordsIter<T>) -> Result<AigerData, ReadErro
 mod tests {
     use super::*;
     use petgraph::dot::{Config, Dot};
+    use std::env;
     #[test]
     fn test_read_add2_aag_egraph_roots() {
         let egraph_roots = read_aag_to_egraph_roots("test/add2.aag").unwrap();
@@ -335,7 +333,6 @@ mod tests {
             .unwrap();
     }
 
-
     #[test]
     fn test_read_add2_aag_netlist() {
         let netlist = read_aag_to_netlist("test/add2.aag").unwrap();
@@ -346,7 +343,7 @@ mod tests {
                 Dot::with_config(&netlist.graph, &[Config::EdgeNoLabel])
             ),
         )
-            .unwrap();
+        .unwrap();
     }
 
     #[test]
@@ -359,7 +356,7 @@ mod tests {
                 Dot::with_config(&netlist.graph, &[Config::EdgeNoLabel])
             ),
         )
-            .unwrap();
+        .unwrap();
     }
 
     #[test]
@@ -372,7 +369,7 @@ mod tests {
                 Dot::with_config(&netlist.graph, &[Config::EdgeNoLabel])
             ),
         )
-            .unwrap();
+        .unwrap();
     }
 
     #[test]

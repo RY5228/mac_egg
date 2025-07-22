@@ -1,4 +1,14 @@
-use egg::{Id, Symbol, define_language};
+use egg::{Id, Language, Symbol, define_language};
+use std::fmt::Debug;
+use std::hash::Hash;
+
+pub trait LanguageType: Debug + Clone + PartialEq + Eq + Hash {
+    type Lang: Language;
+
+    fn from_lang(lang: Self::Lang) -> Self;
+
+    fn from_op(op: &str) -> Self;
+}
 
 define_language! {
     pub enum AigLanguage {
@@ -16,20 +26,36 @@ pub enum AigType {
     Bool(bool),
     And,
     Not,
-    Output(Symbol),
-    Input(Symbol),
     Symbol(Symbol),
+}
+
+impl LanguageType for AigType {
+    type Lang = AigLanguage;
+
+    fn from_lang(lang: Self::Lang) -> Self {
+        match lang {
+            AigLanguage::Bool(b) => AigType::Bool(b),
+            AigLanguage::And(_) => AigType::And,
+            AigLanguage::Not(_) => AigType::Not,
+            AigLanguage::Output(s, _) => AigType::Symbol(s),
+            AigLanguage::Input(s) => AigType::Symbol(s),
+            AigLanguage::Symbol(s) => AigType::Symbol(s),
+        }
+    }
+
+    fn from_op(op: &str) -> Self {
+        match op {
+            "and" => AigType::And,
+            "not" => AigType::Not,
+            "true" => AigType::Bool(true),
+            "false" => AigType::Bool(false),
+            s => AigType::Symbol(s.to_owned().into()),
+        }
+    }
 }
 
 impl From<AigLanguage> for AigType {
     fn from(aig: AigLanguage) -> Self {
-        match aig {
-            AigLanguage::Bool(b) => AigType::Bool(b),
-            AigLanguage::And(_) => AigType::And,
-            AigLanguage::Not(_) => AigType::Not,
-            AigLanguage::Output(s, _) => AigType::Output(s),
-            AigLanguage::Input(s) => AigType::Input(s),
-            AigLanguage::Symbol(s) => AigType::Symbol(s),
-        }
+        AigType::from_lang(aig)
     }
 }

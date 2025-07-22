@@ -28,7 +28,7 @@ where
     N: Analysis<L>,
     N::Data: Clone,
 {
-    fn from(netlist: &EGraphRoots<L, N>) -> Self {
-        egg_to_serialized_egraph(&netlist.egraph, &netlist.roots)
+    fn from(er: &EGraphRoots<L, N>) -> Self {
+        egg_to_serialized_egraph(&er.egraph, &er.roots)
     }
 }
