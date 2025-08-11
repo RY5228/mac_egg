@@ -1,10 +1,10 @@
 use nom::{
     IResult, Parser,
-    bytes::complete::{is_not, tag, take_till1},
+    bytes::complete::{is_not, tag},
     character::complete::{char, multispace0, multispace1, not_line_ending},
-    combinator::{map, opt},
+    combinator::map,
     multi::separated_list0,
-    sequence::{delimited, preceded, terminated},
+    sequence::{delimited, preceded},
 };
 
 fn parse_input(input: &str) -> IResult<&str, &str> {
