@@ -59,3 +59,41 @@ impl From<AigLanguage> for AigType {
         AigType::from_lang(aig)
     }
 }
+
+define_language! {
+    pub enum StdCellLanguage {
+        Bool(bool),
+        Gate(Symbol, Vec<Id>),
+        Output(Symbol, Id),
+        Input(Symbol),
+        Symbol(Symbol),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum StdCellType {
+    Bool(bool),
+    Symbol(Symbol),
+}
+
+impl LanguageType for StdCellType {
+    type Lang = StdCellLanguage;
+    
+    fn from_lang(lang: StdCellLanguage) -> Self {
+        match lang {
+            StdCellLanguage::Bool(b) => { StdCellType::Bool(b) }
+            StdCellLanguage::Gate(s, _) => { StdCellType::Symbol(s) }
+            StdCellLanguage::Output(s, _) => { StdCellType::Symbol(s) }
+            StdCellLanguage::Input(s) => { StdCellType::Symbol(s) }
+            StdCellLanguage::Symbol(s) => { StdCellType::Symbol(s) }
+        }
+    }
+    
+    fn from_op(op: &str) -> Self {
+        match op { 
+            "true" => StdCellType::Bool(true),
+            "false" => StdCellType::Bool(false),
+            s => StdCellType::Symbol(s.to_owned().into()),
+        }
+    }
+}

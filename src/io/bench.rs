@@ -20,10 +20,10 @@ fn parse_comment(input: &str) -> IResult<&str, ()> {
 }
 
 #[derive(Debug, PartialEq)]
-struct Gate<'a> {
-    gate_type: &'a str,
-    output: &'a str,
-    inputs: Vec<&'a str>,
+pub struct Gate<'a> {
+    pub gate_type: &'a str,
+    pub output: &'a str,
+    pub inputs: Vec<&'a str>,
 }
 
 fn parse_gate(input: &str) -> IResult<&str, Gate> {
@@ -49,13 +49,13 @@ fn parse_gate(input: &str) -> IResult<&str, Gate> {
 }
 
 #[derive(Debug, PartialEq)]
-struct BenchFile<'a> {
-    inputs: Vec<&'a str>,
-    outputs: Vec<&'a str>,
-    gates: Vec<Gate<'a>>,
+pub struct BenchFile<'a> {
+    pub inputs: Vec<&'a str>,
+    pub outputs: Vec<&'a str>,
+    pub gates: Vec<Gate<'a>>,
 }
 
-fn parse_bench(input: &str) -> IResult<&str, BenchFile> {
+pub fn parse_bench(input: &str) -> IResult<&str, BenchFile> {
     let mut inputs = Vec::new();
     let mut outputs = Vec::new();
     let mut gates = Vec::new();
