@@ -8,6 +8,12 @@ pub trait LanguageType: Debug + Clone + PartialEq + Eq + Hash {
     fn from_lang(lang: Self::Lang) -> Self;
 
     fn from_op(op: &str) -> Self;
+
+    fn to_lang_input(self: &Self) -> Self::Lang;
+
+    fn to_lang_output(self: &Self, input: Id) -> Self::Lang;
+
+    fn to_lang_gate(self: &Self, inputs: Vec<Id>) -> Self::Lang;
 }
 
 define_language! {
@@ -52,6 +58,33 @@ impl LanguageType for AigType {
             s => AigType::Symbol(s.to_owned().into()),
         }
     }
+
+    fn to_lang_input(self: &Self) -> Self::Lang {
+        match *self {
+            AigType::Bool(b) => AigLanguage::Bool(b),
+            AigType::Symbol(s) => AigLanguage::Input(s),
+            _ => panic!("For input, op type (AigType) should be Bool or Symbol"),
+        }
+    }
+
+    fn to_lang_output(self: &Self, input: Id) -> Self::Lang {
+        match *self {
+            AigType::Symbol(s) => AigLanguage::Output(s, input),
+            _ => panic!("For output, op type (AigType) should be Symbol"),
+        }
+    }
+
+    fn to_lang_gate(self: &Self, inputs: Vec<Id>) -> Self::Lang {
+        match *self {
+            AigType::And => {
+                AigLanguage::And(inputs.try_into().unwrap())
+            }
+            AigType::Not => {
+                AigLanguage::Not(inputs[0])
+            }
+            _ => panic!("For gate, op type (AigType) should be And or Not"),
+        }
+    }
 }
 
 impl From<AigLanguage> for AigType {
@@ -63,7 +96,7 @@ impl From<AigLanguage> for AigType {
 define_language! {
     pub enum StdCellLanguage {
         Bool(bool),
-        Gate(Symbol, Vec<Id>),
+        Gate(Symbol, Box<[Id]>),
         Output(Symbol, Id),
         Input(Symbol),
         Symbol(Symbol),
@@ -78,22 +111,43 @@ pub enum StdCellType {
 
 impl LanguageType for StdCellType {
     type Lang = StdCellLanguage;
-    
+
     fn from_lang(lang: StdCellLanguage) -> Self {
         match lang {
-            StdCellLanguage::Bool(b) => { StdCellType::Bool(b) }
-            StdCellLanguage::Gate(s, _) => { StdCellType::Symbol(s) }
-            StdCellLanguage::Output(s, _) => { StdCellType::Symbol(s) }
-            StdCellLanguage::Input(s) => { StdCellType::Symbol(s) }
-            StdCellLanguage::Symbol(s) => { StdCellType::Symbol(s) }
+            StdCellLanguage::Bool(b) => StdCellType::Bool(b),
+            StdCellLanguage::Gate(s, _) => StdCellType::Symbol(s),
+            StdCellLanguage::Output(s, _) => StdCellType::Symbol(s),
+            StdCellLanguage::Input(s) => StdCellType::Symbol(s),
+            StdCellLanguage::Symbol(s) => StdCellType::Symbol(s),
         }
     }
-    
+
     fn from_op(op: &str) -> Self {
-        match op { 
+        match op {
             "true" => StdCellType::Bool(true),
             "false" => StdCellType::Bool(false),
             s => StdCellType::Symbol(s.to_owned().into()),
+        }
+    }
+
+    fn to_lang_input(self: &Self) -> Self::Lang {
+        match *self {
+            StdCellType::Bool(b) => StdCellLanguage::Bool(b),
+            StdCellType::Symbol(s) => StdCellLanguage::Input(s),
+        }
+    }
+
+    fn to_lang_output(self: &Self, input: Id) -> Self::Lang {
+        match *self {
+            StdCellType::Symbol(s) => StdCellLanguage::Output(s, input),
+            _ => panic!("For output, op type (StdCellLanguage) should be Symbol"),
+        }
+    }
+
+    fn to_lang_gate(self: &Self, inputs: Vec<Id>) -> Self::Lang {
+        match *self {
+            StdCellType::Symbol(s) => StdCellLanguage::Gate(s, inputs.into()),
+            _ => panic!("For gate, op type (StdCellLanguage) should be Symbol"),
         }
     }
 }

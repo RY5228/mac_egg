@@ -11,8 +11,15 @@ use crate::netlist::Netlist;
 use egg::*;
 pub use egraph_serialize::EGraph as SerializedEGraph;
 use extraction_gym::ExtractionResult;
-use rustc_hash::FxHashSet;
+use petgraph::Direction;
+use petgraph::acyclic::Acyclic;
+use petgraph::algo::toposort;
+use petgraph::graph::NodeIndex;
+use petgraph::visit::{IntoNeighbors, Topo};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::hash_map::Entry;
 use std::fmt::Display;
+use std::ops::Index;
 
 pub fn egg_to_serialized_egraph<L, N>(egraph: &EGraph<L, N>, roots: &Vec<Id>) -> SerializedEGraph
 where
@@ -45,13 +52,63 @@ where
     out
 }
 
-pub fn netlist_to_egg_roots<N, A>(netlist: &Netlist<N, ()>) -> EGraphRoots<N::Lang, A>
+pub fn netlist_to_egg_roots<N, A>(
+    netlist: &Netlist<N, ()>,
+) -> Result<EGraphRoots<N::Lang, A>, String>
 where
     N: LanguageType,
     A: Analysis<N::Lang> + Default,
     A::Data: Clone,
 {
-    todo!()
+    let mut egraph_roots: EGraphRoots<N::Lang, A> = Default::default();
+    let mut nid_to_id: FxHashMap<NodeIndex, Id> = Default::default();
+    let order =
+        toposort(&netlist.graph, None).map_err(|e| format!("Graph contains cycle: {:?}", e))?;
+    for &nid in netlist.leaves.iter() {
+        let weight = &netlist.graph[nid];
+        let id = egraph_roots.egraph.add(weight.to_lang_input());
+        nid_to_id.insert(nid, id);
+    }
+    let leaves_set = FxHashSet::from_iter(netlist.leaves.clone());
+    let root_set = FxHashSet::from_iter(netlist.roots.clone());
+    for &nid in order.iter().rev() {
+        if leaves_set.contains(&nid) || root_set.contains(&nid) {
+            continue;
+        }
+        if nid_to_id.contains_key(&nid) {
+            return Err(format!("Node {:?} exists already", nid))
+        } else {
+            let inputs = netlist
+                .graph
+                .neighbors(nid)
+                .map(|neighbor| nid_to_id[&neighbor])
+                .collect();
+            let weight = &netlist.graph[nid];
+            let id = egraph_roots.egraph.add(weight.to_lang_gate(inputs));
+            nid_to_id.insert(nid, id);
+        }
+    }
+    for &nid in netlist.roots.iter() {
+        if nid_to_id.contains_key(&nid) {
+            return Err(format!("Node {:?} exists already", nid));
+        } else {
+            let count = netlist.graph.neighbors(nid).count();
+            if count != 1 {
+                return Err(format!("Output {:?} should have exactly 1 input, but got {:?}", nid, count));
+            }
+            let inputs: Vec<_> = netlist
+                .graph
+                .neighbors(nid)
+                .map(|neighbor| nid_to_id[&neighbor])
+                .collect();
+            let weight = &netlist.graph[nid];
+            let id = egraph_roots.egraph.add(weight.to_lang_output(inputs[0]));
+            nid_to_id.insert(nid, id);
+            egraph_roots.roots.push(id);
+        }
+    }
+    egraph_roots.egraph.rebuild();
+    Ok(egraph_roots)
 }
 
 pub fn choose_result_in_serialized_egraph_into_netlist<N>(
@@ -124,4 +181,24 @@ pub fn choose_result_in_egraph(
         }
     }
     Some(out_egraph)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+    use crate::io::stdcell::read_bench_to_netlist;
+    use super::*;
+    
+    #[test]
+    fn test_netlist_to_egg_roots() {
+        let netlist = read_bench_to_netlist("test/add2.bench").unwrap();
+        let egraph_roots: EGraphRoots<_, ()> = netlist_to_egg_roots(&netlist).unwrap();
+        let s = SerializedEGraph::from(&egraph_roots);
+        s.to_json_file(env::current_dir().unwrap().join("json/test_add2_bench.json"))
+            .unwrap();
+        #[cfg(target_os = "linux")]
+        s.to_svg_file(env::current_dir().unwrap().join("svg/test_add2_bench.svg"))
+            .unwrap();
+        todo!("Test More Cases!")
+    }
 }

@@ -27,7 +27,7 @@ pub fn read_bench_to_netlist<P: AsRef<Path>>(path: P) -> Result<Netlist<StdCellT
             entry.insert(nid);
             netlist.leaves.push(nid);
         } else {
-            return Err(format!("input {} exists already", input).into());
+            return Err(format!("input {:?} exists already", input).into());
         }
     }
     for gate in bench_file.gates {

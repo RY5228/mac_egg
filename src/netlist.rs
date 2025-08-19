@@ -1,7 +1,6 @@
 use egg::{Analysis, EGraph, Language};
 use petgraph::Graph;
 use petgraph::graph::NodeIndex;
-use crate::egraph_roots::EGraphRoots;
 
 #[derive(Debug, Clone)]
 pub struct Netlist<N, E> {
@@ -10,8 +9,7 @@ pub struct Netlist<N, E> {
     pub leaves: Vec<NodeIndex>,
 }
 
-impl<N, E> Default for Netlist<N, E>
-{
+impl<N, E> Default for Netlist<N, E> {
     fn default() -> Self {
         Self {
             graph: Default::default(),
