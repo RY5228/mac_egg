@@ -380,6 +380,7 @@ dependencies = [
  "egg",
  "egraph-serialize",
  "extraction-gym",
+ "fixedbitset",
  "indexmap",
  "nom",
  "petgraph",
