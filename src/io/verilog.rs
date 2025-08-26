@@ -11,9 +11,13 @@ use nom::{
     sequence::{delimited, pair, preceded, separated_pair, terminated},
 };
 use std::collections::{HashMap, HashSet};
+use std::collections::btree_map::Entry;
+use std::ffi::c_long;
+use std::fmt;
 use std::str::FromStr;
+use rustc_hash::FxHashSet;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Wire<'a> {
     pub name: &'a str,
     pub bit_range: Option<(usize, usize)>,
@@ -23,6 +27,16 @@ pub struct Wire<'a> {
 pub struct Bit<'a> {
     pub name: &'a str,
     pub bit_index: Option<usize>,
+}
+
+impl fmt::Display for Bit<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(bit_index) = self.bit_index {
+            write!(f, "{}[{}]", self.name, bit_index)
+        } else {
+            write!(f, "{}", self.name)
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -281,6 +295,25 @@ fn module_body(input: &str) -> IResult<&str, ModuleBody> {
             break;
         }
     }
+    let mut wire_set = FxHashSet::default();
+    let mut wire_vec: Vec<Wire> = Vec::new();
+    for input in body.inputs.iter() {
+        if wire_set.insert(input) {
+            wire_vec.push(input.clone());
+        }
+    }
+    for output in body.outputs.iter() {
+        if wire_set.insert(output) {
+            wire_vec.push(output.clone());
+        }
+    }
+    for wire in body.wires.iter() {
+        if wire_set.insert(wire) {
+            wire_vec.push(wire.clone());
+        }
+    }
+    body.wires = wire_vec;
+    
     Ok((remaining, body))
 }
 
@@ -314,7 +347,7 @@ pub fn module(input: &str) -> IResult<&str, Module> {
 }
 
 impl<'a> Module<'a> {
-    fn verify(&self) -> Result<(), String> {
+    pub fn verify(&self) -> Result<(), String> {
         // shortcut
         if self.ports.len() != self.inputs.len() + self.outputs.len() {
             return Err(format!(

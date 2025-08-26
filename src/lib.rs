@@ -1,8 +1,8 @@
-mod egraph_roots;
+pub mod egraph_roots;
 pub mod extractor;
 pub mod io;
 pub mod language;
-mod netlist;
+pub mod netlist;
 pub mod rule;
 
 use crate::egraph_roots::EGraphRoots;
@@ -76,7 +76,7 @@ where
             continue;
         }
         if nid_to_id.contains_key(&nid) {
-            return Err(format!("Node {:?} exists already", nid))
+            return Err(format!("Node {:?} exists already", nid));
         } else {
             let inputs = netlist
                 .graph
@@ -94,7 +94,10 @@ where
         } else {
             let count = netlist.graph.neighbors(nid).count();
             if count != 1 {
-                return Err(format!("Output {:?} should have exactly 1 input, but got {:?}", nid, count));
+                return Err(format!(
+                    "Output {:?} should have exactly 1 input, but got {:?}",
+                    nid, count
+                ));
             }
             let inputs: Vec<_> = netlist
                 .graph
@@ -185,20 +188,75 @@ pub fn choose_result_in_egraph(
 
 #[cfg(test)]
 mod tests {
-    use std::env;
-    use crate::io::stdcell::read_bench_to_netlist;
     use super::*;
-    
+    use crate::io::liberty::{get_direction_of_pins, read_liberty};
+    use crate::io::stdcell::{read_bench_to_netlist, read_verilog_with_lib_to_netlist};
+    use std::env;
+
     #[test]
     fn test_netlist_to_egg_roots() {
         let netlist = read_bench_to_netlist("test/add2.bench").unwrap();
         let egraph_roots: EGraphRoots<_, ()> = netlist_to_egg_roots(&netlist).unwrap();
         let s = SerializedEGraph::from(&egraph_roots);
-        s.to_json_file(env::current_dir().unwrap().join("json/test_add2_bench.json"))
-            .unwrap();
+        s.to_json_file(
+            env::current_dir()
+                .unwrap()
+                .join("json/test_add2_bench.json"),
+        )
+        .unwrap();
         #[cfg(target_os = "linux")]
         s.to_svg_file(env::current_dir().unwrap().join("svg/test_add2_bench.svg"))
             .unwrap();
-        todo!("Test More Cases!")
+        let liberty = read_liberty("test/asap7sc6t_SELECT_LVT_TT_nldm.lib").unwrap();
+        let lib = get_direction_of_pins(&liberty).unwrap();
+        let (netlist, name) = read_verilog_with_lib_to_netlist("test/add2_map_abc.v", lib).unwrap();
+        assert_eq!(name, "add2");
+        let egraph_roots: EGraphRoots<_, ()> = netlist_to_egg_roots(&netlist).unwrap();
+        let s = SerializedEGraph::from(&egraph_roots);
+        s.to_json_file(
+            env::current_dir()
+                .unwrap()
+                .join("json/test_add2_map_abc_v.json"),
+        )
+        .unwrap();
+        #[cfg(target_os = "linux")]
+        s.to_svg_file(
+            env::current_dir()
+                .unwrap()
+                .join("svg/test_add2_map_abc_v.svg"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_netlist_to_egg_roots_mul4() {
+        let liberty = read_liberty("test/asap7sc6t_SELECT_LVT_TT_nldm.lib").unwrap();
+        let lib = get_direction_of_pins(&liberty).unwrap();
+        let (netlist, name) =
+            read_verilog_with_lib_to_netlist("test/mul4_map_genus.v", lib).unwrap();
+        assert_eq!(name, "Multiplier");
+        let egraph_roots: EGraphRoots<_, ()> = netlist_to_egg_roots(&netlist).unwrap();
+        let s = SerializedEGraph::from(&egraph_roots);
+        s.to_json_file(
+            env::current_dir()
+                .unwrap()
+                .join("json/test_mul4_map_genus_v.json"),
+        )
+        .unwrap();
+        s.to_dot_file(
+            env::current_dir()
+                .unwrap()
+                .join("dot/test_mul4_map_genus_v_egg.dot"),
+        )
+        .unwrap()
+        
+        // dot rendering is too slow, so commented
+        // #[cfg(target_os = "linux")]
+        // s.to_svg_file(
+        //     env::current_dir()
+        //         .unwrap()
+        //         .join("svg/test_mul4_map_genus_v.svg"),
+        // )
+        // .unwrap();
     }
 }
