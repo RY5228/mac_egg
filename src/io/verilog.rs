@@ -1,4 +1,3 @@
-use fixedbitset::FixedBitSet;
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -11,8 +10,6 @@ use nom::{
     sequence::{delimited, pair, preceded, separated_pair, terminated},
 };
 use std::collections::{HashMap, HashSet};
-use std::collections::btree_map::Entry;
-use std::ffi::c_long;
 use std::fmt;
 use std::str::FromStr;
 use rustc_hash::FxHashSet;
@@ -762,7 +759,7 @@ a , b, mult
     #[test]
     fn test_module() {
         let input =
-            fs::read_to_string(env::current_dir().unwrap().join("test/mul4_map_genus.v")).unwrap();
+            fs::read_to_string(env::current_dir().unwrap().join("../../test/mul32_map_genus.v")).unwrap();
         let result = module(&input);
         assert!(result.is_ok());
         let (remaining, parsed_module) = result.unwrap();

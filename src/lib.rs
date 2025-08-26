@@ -11,13 +11,10 @@ use crate::netlist::Netlist;
 use egg::*;
 pub use egraph_serialize::EGraph as SerializedEGraph;
 use extraction_gym::ExtractionResult;
-use petgraph::Direction;
-use petgraph::acyclic::Acyclic;
 use petgraph::algo::toposort;
 use petgraph::graph::NodeIndex;
-use petgraph::visit::{IntoNeighbors, Topo};
+use petgraph::visit::IntoNeighbors;
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::collections::hash_map::Entry;
 use std::fmt::Display;
 use std::ops::Index;
 
@@ -226,27 +223,46 @@ mod tests {
                 .join("svg/test_add2_map_abc_v.svg"),
         )
         .unwrap();
+        let liberty = read_liberty("test/asap7sc6t_SELECT_LVT_TT_nldm.lib").unwrap();
+        let lib = get_direction_of_pins(&liberty).unwrap();
+        let (netlist, name) = read_verilog_with_lib_to_netlist("test/mul4_map_abc.v", lib).unwrap();
+        assert_eq!(name, "Multi4");
+        let egraph_roots: EGraphRoots<_, ()> = netlist_to_egg_roots(&netlist).unwrap();
+        let s = SerializedEGraph::from(&egraph_roots);
+        s.to_json_file(
+            env::current_dir()
+                .unwrap()
+                .join("json/test_mul4_map_abc_v.json"),
+        )
+            .unwrap();
+        #[cfg(target_os = "linux")]
+        s.to_svg_file(
+            env::current_dir()
+                .unwrap()
+                .join("svg/test_mul4_map_abc_v.svg"),
+        )
+            .unwrap();
     }
 
     #[test]
-    fn test_netlist_to_egg_roots_mul4() {
+    fn test_netlist_to_egg_roots_mul32() {
         let liberty = read_liberty("test/asap7sc6t_SELECT_LVT_TT_nldm.lib").unwrap();
         let lib = get_direction_of_pins(&liberty).unwrap();
         let (netlist, name) =
-            read_verilog_with_lib_to_netlist("test/mul4_map_genus.v", lib).unwrap();
+            read_verilog_with_lib_to_netlist("../test/mul32_map_genus.v", lib).unwrap();
         assert_eq!(name, "Multiplier");
         let egraph_roots: EGraphRoots<_, ()> = netlist_to_egg_roots(&netlist).unwrap();
         let s = SerializedEGraph::from(&egraph_roots);
         s.to_json_file(
             env::current_dir()
                 .unwrap()
-                .join("json/test_mul4_map_genus_v.json"),
+                .join("json/test_mul32_map_genus_v.json"),
         )
         .unwrap();
         s.to_dot_file(
             env::current_dir()
                 .unwrap()
-                .join("dot/test_mul4_map_genus_v_egg.dot"),
+                .join("dot/test_mul32_map_genus_v_egg.dot"),
         )
         .unwrap()
         

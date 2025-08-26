@@ -202,10 +202,10 @@ mod tests {
     fn test_read_verilog_with_lib_to_netlist_mul4_genus() {
         let liberty = read_liberty("test/asap7sc6t_SELECT_LVT_TT_nldm.lib").unwrap();
         let lib = get_direction_of_pins(&liberty).unwrap();
-        let (netlist, name) = read_verilog_with_lib_to_netlist("test/mul4_map_genus.v", lib).unwrap();
+        let (netlist, name) = read_verilog_with_lib_to_netlist("../../test/mul32_map_genus.v", lib).unwrap();
         assert_eq!(name, "Multiplier");
         fs::write(
-            env::current_dir().unwrap().join("dot/test_mul4_map_genus_v.dot"),
+            env::current_dir().unwrap().join("dot/test_mul32_map_genus_v.dot"),
             format!(
                 "{:?}",
                 Dot::with_config(&netlist.graph, &[Config::EdgeNoLabel])
