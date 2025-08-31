@@ -1,3 +1,4 @@
+mod analyzer;
 pub mod egraph_roots;
 pub mod extractor;
 pub mod io;
@@ -75,11 +76,12 @@ where
         if nid_to_id.contains_key(&nid) {
             return Err(format!("Node {:?} exists already", nid));
         } else {
-            let inputs = netlist
+            let inputs: Vec<_> = netlist
                 .graph
                 .neighbors(nid)
                 .map(|neighbor| nid_to_id[&neighbor])
                 .collect();
+            let inputs: Vec<_> = inputs.into_iter().rev().collect(); // petaGraph use linked list to push edges, so we must reverse
             let weight = &netlist.graph[nid];
             let id = egraph_roots.egraph.add(weight.to_lang_gate(inputs));
             nid_to_id.insert(nid, id);
@@ -234,14 +236,14 @@ mod tests {
                 .unwrap()
                 .join("json/test_mul4_map_abc_v.json"),
         )
-            .unwrap();
+        .unwrap();
         #[cfg(target_os = "linux")]
         s.to_svg_file(
             env::current_dir()
                 .unwrap()
                 .join("svg/test_mul4_map_abc_v.svg"),
         )
-            .unwrap();
+        .unwrap();
     }
 
     #[test]
@@ -265,7 +267,7 @@ mod tests {
                 .join("dot/test_mul32_map_genus_v_egg.dot"),
         )
         .unwrap()
-        
+
         // dot rendering is too slow, so commented
         // #[cfg(target_os = "linux")]
         // s.to_svg_file(
