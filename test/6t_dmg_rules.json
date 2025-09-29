@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "name": "NAND2x1_OR2x2",
+      "searcher": "(NAND2x1_ASAP7_6t_L ?A ?B)",
+      "applier": "(OR2x2_ASAP7_6t_L (INVx1_ASAP7_6t_L ?A) (INVx1_ASAP7_6t_L ?B))",
+      "bidirectional": true
+    },
+    {
+      "name": "NOR2x1_AND2x2",
+      "searcher": "(NOR2x1_ASAP7_6t_L ?A ?B)",
+      "applier": "(AND2x2_ASAP7_6t_L (INVx1_ASAP7_6t_L ?A) (INVx1_ASAP7_6t_L ?B))",
+      "bidirectional": true
+    }
+  ]
+}

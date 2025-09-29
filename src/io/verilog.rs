@@ -759,7 +759,7 @@ a , b, mult
     #[test]
     fn test_module() {
         let input =
-            fs::read_to_string(env::current_dir().unwrap().join("../../test/mul32_map_genus.v")).unwrap();
+            fs::read_to_string(env::current_dir().unwrap().join("test/mul32_map_genus.v")).unwrap();
         let result = module(&input);
         assert!(result.is_ok());
         let (remaining, parsed_module) = result.unwrap();

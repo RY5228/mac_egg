@@ -2,12 +2,20 @@ use crate::io::bench::parse_bench;
 use crate::io::verilog::module;
 use crate::language::StdCellType;
 use crate::netlist::Netlist;
-use libertyparse::PinDirection;
+use indexmap::IndexMap;
+use itertools::Itertools;
+use libertyparse::{Lib, PinDirection};
+use petgraph::algo::toposort;
 use petgraph::graph::NodeIndex;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::VecDeque;
 use std::collections::hash_map::Entry;
+use std::fmt::format;
 use std::fs;
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::Path;
+use crate::io::liberty::Library;
 
 pub fn read_bench_to_netlist<P: AsRef<Path>>(path: P) -> Result<Netlist<StdCellType, ()>, String> {
     let content =
@@ -56,12 +64,17 @@ pub fn read_bench_to_netlist<P: AsRef<Path>>(path: P) -> Result<Netlist<StdCellT
 
 pub fn read_verilog_with_lib_to_netlist<P: AsRef<Path>>(
     verilog_path: P,
-    lib: Vec<(String, Vec<(String, &PinDirection)>)>,
+    lib: Library,
 ) -> Result<(Netlist<StdCellType, ()>, String), String> {
     let content = fs::read_to_string(verilog_path.as_ref())
         .map_err(|e| format!("Error reading file: {}", e))?;
     let (_, parsed_module) = module(&content).map_err(|e| format!("Parse error: {:?}", e))?;
     parsed_module.verify()?;
+    // std::fs::write(
+    //     "dot/mul32_map_genus.v.module",
+    //     format!("{:#?}", parsed_module),
+    // )
+    // .unwrap();
     let mut netlist: Netlist<StdCellType, ()> = Default::default();
     let mut symbol_to_nid: FxHashMap<String, NodeIndex> = Default::default();
 
@@ -84,10 +97,32 @@ pub fn read_verilog_with_lib_to_netlist<P: AsRef<Path>>(
         }
     }
 
-    let lib = lib
-        .into_iter()
-        .map(|(name, pins)| (name, pins.into_iter().collect::<FxHashMap<_, _>>()))
-        .collect::<FxHashMap<_, _>>();
+    // insert nodes first
+    for gate in parsed_module.gates.iter() {
+        if let Some(pins) = lib.get(gate.gate_type) {
+            for connection in gate.connections.iter() {
+                match pins.get(connection.gate_pin) {
+                    Some(PinDirection::O) => {
+                        let symbol = format!("{}", connection.bit);
+                        symbol_to_nid.insert(
+                            symbol,
+                            netlist
+                                .graph
+                                .add_node(StdCellType::Symbol(gate.gate_type.into())),
+                        );
+                    }
+                    _ => continue,
+                }
+            }
+        } else {
+            return Err(format!(
+                "gate {} not found in lib, when adding nodes",
+                gate.gate_type
+            )
+            .into());
+        }
+    }
+    // insert edges after
     for gate in parsed_module.gates {
         if let Some(pins) = lib.get(gate.gate_type) {
             let mut oids: Vec<_> = Default::default();
@@ -96,19 +131,19 @@ pub fn read_verilog_with_lib_to_netlist<P: AsRef<Path>>(
                 match pins.get(connection.gate_pin) {
                     Some(PinDirection::O) => {
                         let symbol = format!("{}", connection.bit);
-                        oids.push(*symbol_to_nid.entry(symbol).or_insert_with(|| {
-                            netlist
-                                .graph
-                                .add_node(StdCellType::Symbol(gate.gate_type.into()))
-                        }));
+                        oids.push(
+                            *symbol_to_nid
+                                .get(&symbol)
+                                .ok_or(format!("output {} not found", symbol))?,
+                        );
                     }
                     Some(PinDirection::I) => {
                         let symbol = format!("{}", connection.bit);
-                        iids.push(*symbol_to_nid.entry(symbol).or_insert_with(|| {
-                            netlist
-                                .graph
-                                .add_node(StdCellType::Symbol(gate.gate_type.into()))
-                        }));
+                        iids.push(
+                            *symbol_to_nid
+                                .get(&symbol)
+                                .ok_or(format!("input {} not found", symbol))?,
+                        );
                     }
                     Some(PinDirection::Unsupported(s)) => {
                         return Err(format!(
@@ -140,6 +175,13 @@ pub fn read_verilog_with_lib_to_netlist<P: AsRef<Path>>(
                     gate.gate_type
                 )
                 .into());
+            }
+            if iids.len() != pins.len() - 1 {
+                return Err(format!(
+                    "Inconsistent number of inputs: got {}, should be {}",
+                    iids.len(),
+                    pins.len() - 1
+                ));
             }
             //     todo!(consider check the pin usage of gate)
             let oid = oids[0];
@@ -177,6 +219,157 @@ pub fn read_verilog_with_lib_to_netlist<P: AsRef<Path>>(
     Ok((netlist, parsed_module.name.into()))
 }
 
+pub fn write_verilog_from_netlist_with_lib<P: AsRef<Path>>(
+    verilog_path: P,
+    netlist: Netlist<StdCellType, ()>,
+    module_name: &str,
+    lib: Library,
+) -> Result<(), String> {
+    let mut file = File::create(verilog_path).map_err(|e| e.to_string())?;
+    let normalize = |s: String| s.replace(|c| c == '[' || c == ']', "_");
+    let inputs = netlist
+        .leaves
+        .iter()
+        .filter_map(|&n| netlist.graph[n].to_string_as_io().map(normalize))
+        .collect_vec();
+    let outputs = netlist
+        .roots
+        .iter()
+        .filter_map(|&n| netlist.graph[n].to_string_as_io().map(normalize))
+        .collect_vec();
+    let mut io = inputs.clone();
+    io.extend_from_slice(&outputs);
+    let i_nodes = FxHashSet::from_iter(netlist.leaves.clone());
+    let o_nodes = FxHashSet::from_iter(netlist.roots.clone());
+    || -> std::io::Result<()> {
+        writeln!(file, "module {}({});", module_name, io.join(", "))?;
+        for input in inputs {
+            writeln!(file, "  input {};", input)?;
+            writeln!(file, "  wire {};", input)?;
+        }
+        for output in outputs {
+            writeln!(file, "  output {};", output)?;
+            writeln!(file, "  wire {};", output)?;
+        }
+        Ok(())
+    }()
+    .map_err(|e| e.to_string())?;
+    let order =
+        toposort(&netlist.graph, None).map_err(|e| format!("Graph contains cycle: {:?}", e))?;
+    for &nid in order.iter().rev() {
+        if i_nodes.contains(&nid) || o_nodes.contains(&nid) {
+            continue;
+        }
+        writeln!(file, "  wire _wire_{};", nid.index()).map_err(|e| e.to_string())?;
+    }
+    for &nid in order.iter().rev() {
+        if i_nodes.contains(&nid) || o_nodes.contains(&nid) {
+            continue;
+        }
+        let mut in_pins: VecDeque<_> = netlist.inputs(nid).collect();
+        let out_pins = netlist
+            .outputs(nid)
+            .filter(|o| o_nodes.contains(o))
+            .collect_vec();
+        let out_pin = match out_pins.len() {
+            0 => nid,
+            1 => out_pins[0],
+            _ => {
+                return Err(format!(
+                    "We only support 1 out pin now, got {} for node {}",
+                    out_pins.len(),
+                    nid.index()
+                ));
+            }
+        };
+        let weight = netlist.graph[nid].clone();
+        match weight {
+            StdCellType::Bool(b) => {
+                writeln!(
+                    file,
+                    "  assign _wire_{} = {};",
+                    nid.index(),
+                    if b { 1 } else { 0 }
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            StdCellType::Symbol(s) => {
+                let pins = lib
+                    .get(s.into())
+                    .ok_or(format!("{} is not in lib", s).to_string())?;
+                let mut pin_string_vec = vec![];
+                let out_pin_num = pins
+                    .values()
+                    .filter(|dir| **dir == PinDirection::O)
+                    .count();
+                if out_pin_num != 1 {
+                    return Err(format!(
+                        "We only support 1 out pin now, got {} for cell {}",
+                        out_pin_num, s
+                    )
+                    .to_string());
+                }
+                for (name, dir) in pins {
+                    match dir {
+                        PinDirection::O => {
+                            if o_nodes.contains(&out_pin) {
+                                pin_string_vec.push(format!(
+                                    ".{} ({})",
+                                    name,
+                                    normalize(netlist.graph[out_pin].to_string()).to_string()
+                                ));
+                            } else {
+                                pin_string_vec.push(
+                                    format!(".{} (_wire_{})", name, out_pin.index()).to_string(),
+                                );
+                            }
+                        }
+                        PinDirection::I => {
+                            let in_nid =
+                                in_pins.pop_front().ok_or(format!("No enough in_pin, cell {} pin {} node {}", s, name, nid.index()).to_string())?;
+                            if i_nodes.contains(&in_nid) {
+                                pin_string_vec.push(format!(
+                                    ".{} ({})",
+                                    name,
+                                    normalize(netlist.graph[in_nid].to_string()).to_string()
+                                ));
+                            } else {
+                                pin_string_vec.push(
+                                    format!(".{} (_wire_{})", name, in_nid.index()).to_string(),
+                                );
+                            }
+                        }
+                        PinDirection::Unspecified => {
+                            return Err(format!(
+                                "Unspecified pin direction in cell {} pin {}",
+                                s, name
+                            )
+                            .into());
+                        }
+                        PinDirection::Unsupported(content) => {
+                            return Err(format!(
+                                "Unsupported pin direction in cell {} pin {} with content {}",
+                                s, name, content
+                            )
+                            .into());
+                        }
+                    }
+                }
+                writeln!(
+                    file,
+                    "  {} _nid_{}({});",
+                    s,
+                    nid.index(),
+                    pin_string_vec.join(", ")
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    writeln!(file, "endmodule").map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,19 +392,22 @@ mod tests {
     }
 
     #[test]
-    fn test_read_verilog_with_lib_to_netlist_mul4_genus() {
+    fn test_read_verilog_with_lib_to_netlist_mul32_map_genus() {
         let liberty = read_liberty("test/asap7sc6t_SELECT_LVT_TT_nldm.lib").unwrap();
         let lib = get_direction_of_pins(&liberty).unwrap();
-        let (netlist, name) = read_verilog_with_lib_to_netlist("../../test/mul32_map_genus.v", lib).unwrap();
+        let (netlist, name) =
+            read_verilog_with_lib_to_netlist("test/mul32_map_genus.v", lib).unwrap();
         assert_eq!(name, "Multiplier");
         fs::write(
-            env::current_dir().unwrap().join("dot/test_mul32_map_genus_v.dot"),
+            env::current_dir()
+                .unwrap()
+                .join("dot/test_mul32_map_genus_v.dot"),
             format!(
                 "{:?}",
                 Dot::with_config(&netlist.graph, &[Config::EdgeNoLabel])
             ),
         )
-            .unwrap();
+        .unwrap();
     }
 
     #[test]
@@ -221,14 +417,37 @@ mod tests {
         let (netlist, name) = read_verilog_with_lib_to_netlist("test/add2_map_abc.v", lib).unwrap();
         assert_eq!(name, "add2");
         fs::write(
-            env::current_dir().unwrap().join("dot/test_add2_map_abc_v.dot"),
+            env::current_dir()
+                .unwrap()
+                .join("dot/test_add2_map_abc_v.dot"),
             format!(
                 "{:?}",
                 Dot::with_config(&netlist.graph, &[Config::EdgeNoLabel])
             ),
         )
-            .unwrap();
-        assert_eq!(netlist.leaves, vec![NodeIndex::new(0), NodeIndex::new(1), NodeIndex::new(2), NodeIndex::new(3)]);
-        assert_eq!(netlist.roots, vec![NodeIndex::new(16), NodeIndex::new(17), NodeIndex::new(18)]);
+        .unwrap();
+        assert_eq!(
+            netlist.leaves,
+            vec![
+                NodeIndex::new(0),
+                NodeIndex::new(1),
+                NodeIndex::new(2),
+                NodeIndex::new(3)
+            ]
+        );
+        assert_eq!(
+            netlist.roots,
+            vec![NodeIndex::new(16), NodeIndex::new(17), NodeIndex::new(18)]
+        );
+    }
+
+    #[test]
+    fn test_write_verilog_from_netlist_with_lib_add2_abc() {
+        let liberty = read_liberty("test/asap7sc6t_SELECT_LVT_TT_nldm.lib").unwrap();
+        let lib = get_direction_of_pins(&liberty).unwrap();
+        let (netlist, name) =
+            read_verilog_with_lib_to_netlist("test/add2_map_abc.v", lib.clone()).unwrap();
+        write_verilog_from_netlist_with_lib("verilog/test_add2_map_abc.v", netlist, &name, lib)
+            .unwrap()
     }
 }

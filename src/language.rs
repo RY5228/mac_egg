@@ -151,3 +151,19 @@ impl LanguageType for StdCellType {
         }
     }
 }
+
+impl StdCellType {
+    pub fn to_string(self: &Self) -> String {
+        match self {
+            Self::Bool(b) => if *b {"0"} else {"1"}.to_string(),
+            Self::Symbol(s) => s.to_string(),
+        }
+    }
+    
+    pub fn to_string_as_io(self: &Self) -> Option<String> {
+        match self {
+            Self::Bool(b) => None,
+            Self::Symbol(s) => Some(s.to_string()),
+        }
+    }
+}

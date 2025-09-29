@@ -1,6 +1,10 @@
 use libertyparse::{Liberty, PinDirection};
 use std::fs;
 use std::path::Path;
+use indexmap::IndexMap;
+
+pub type Library = IndexMap<String, IndexMap<String, PinDirection>>;
+
 pub fn read_liberty<P: AsRef<Path>>(path: P) -> Result<Liberty, String> {
     let content =
         fs::read_to_string(path.as_ref()).map_err(|e| format!("Error reading file: {}", e))?;
@@ -9,7 +13,7 @@ pub fn read_liberty<P: AsRef<Path>>(path: P) -> Result<Liberty, String> {
 
 pub fn get_direction_of_pins(
     liberty: &Liberty,
-) -> Result<Vec<(String, Vec<(String, &PinDirection)>)>, String> {
+) -> Result<Library, String> {
     Ok(liberty
         .libs
         .first()
@@ -22,11 +26,11 @@ pub fn get_direction_of_pins(
                 n.to_string(),
                 c.pins
                     .iter()
-                    .map(|(n, p)| (n.to_string(), &p.direction))
-                    .collect::<Vec<_>>(),
+                    .map(|(n, p)| (n.to_string(), p.direction.clone()))
+                    .collect(),
             )
         })
-        .collect::<Vec<_>>())
+        .collect())
 }
 
 #[cfg(test)]

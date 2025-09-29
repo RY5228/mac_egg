@@ -1,0 +1,21 @@
+{
+  "rewrites": [
+    {
+      "name": "Negation_1",
+      "searcher": "(not true)",
+      "applier": "false"
+    },
+    {
+      "name": "Commutative",
+      "searcher": "(and ?x ?y)",
+      "applier": "(and ?y ?x)",
+      "bidirectional": true
+    },
+    {
+      "name": "Multipattern",
+      "searcher": "?v1 = (and ?x ?y), ?v2 = (and ?x ?y)",
+      "applier": "?v1 = (and ?y ?x), ?v2 = (and ?y ?x)",
+      "multi": true
+    }
+  ]
+}

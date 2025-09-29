@@ -5,7 +5,9 @@ pub mod io;
 pub mod language;
 pub mod netlist;
 pub mod rule;
+mod mining;
 
+use std::collections::VecDeque;
 use crate::egraph_roots::EGraphRoots;
 use crate::language::LanguageType;
 use crate::netlist::Netlist;
@@ -18,6 +20,8 @@ use petgraph::visit::IntoNeighbors;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt::Display;
 use std::ops::Index;
+use indexmap::IndexMap;
+use itertools::Itertools;
 
 pub fn egg_to_serialized_egraph<L, N>(egraph: &EGraph<L, N>, roots: &Vec<Id>) -> SerializedEGraph
 where
@@ -76,12 +80,13 @@ where
         if nid_to_id.contains_key(&nid) {
             return Err(format!("Node {:?} exists already", nid));
         } else {
-            let inputs: Vec<_> = netlist
-                .graph
-                .neighbors(nid)
-                .map(|neighbor| nid_to_id[&neighbor])
-                .collect();
-            let inputs: Vec<_> = inputs.into_iter().rev().collect(); // petaGraph use linked list to push edges, so we must reverse
+            // let inputs: Vec<_> = netlist
+            //     .graph
+            //     .neighbors(nid)
+            //     .map(|neighbor| nid_to_id[&neighbor])
+            //     .collect();
+            // let inputs: Vec<_> = inputs.into_iter().rev().collect(); // petaGraph use linked list to push edges, so we must reverse
+            let inputs = netlist.inputs(nid).map(|neighbor| nid_to_id[&neighbor]).collect_vec();
             let weight = &netlist.graph[nid];
             let id = egraph_roots.egraph.add(weight.to_lang_gate(inputs));
             nid_to_id.insert(nid, id);
@@ -116,30 +121,58 @@ where
 pub fn choose_result_in_serialized_egraph_into_netlist<N>(
     in_egraph: &SerializedEGraph,
     result: &ExtractionResult,
-) -> Option<Netlist<N, ()>>
+) -> Result<Netlist<N, ()>, String>
 where
     N: LanguageType,
 {
     use egraph_serialize::*;
     let mut netlist: Netlist<N, ()> = Default::default();
-    let mut todo: Vec<ClassId> = in_egraph.root_eclasses.to_vec();
+    let mut todo: VecDeque<ClassId> = in_egraph.root_eclasses.clone().into();
     let mut visited: FxHashSet<ClassId> = Default::default();
-    while let Some(cid) = todo.pop() {
+    let mut class_to_nid: FxHashMap<ClassId, NodeIndex> = Default::default();
+
+    // step 1: insert nodes
+    while let Some(cid) = todo.pop_front() {
         if !visited.insert(cid.clone()) {
             continue;
         }
-        assert!(result.choices.contains_key(&cid));
-        let nid = &result.choices[&cid];
-        netlist.graph.add_node(N::from_op(&in_egraph[nid].op));
-        for child in in_egraph[nid].children.iter() {
-            todo!();
+        if !result.choices.contains_key(&cid) {
+            return Err(format!("Class {} not found in choices", cid));
         }
+        let nid = &result.choices[&cid];
+        let oid = netlist.graph.add_node(N::from_op(&in_egraph[nid].op));
+        if in_egraph[nid].is_leaf() {
+            netlist.leaves.push(oid);
+        }
+        class_to_nid.insert(cid.clone(), oid);
 
-        for child in &in_egraph[&result.choices[&cid]].children {
-            todo.push(in_egraph.nid_to_cid(child).clone());
+        for child in &in_egraph[nid].children {
+            todo.push_back(in_egraph.nid_to_cid(child).clone());
         }
     }
-    Some(netlist)
+    for cid in in_egraph.root_eclasses.iter() {
+        netlist.roots.push(class_to_nid[cid].clone());
+    }
+    // step 2: insert edges
+    todo = in_egraph.root_eclasses.clone().into();
+    visited.clear();
+    while let Some(cid) = todo.pop_front() {
+        if !visited.insert(cid.clone()) {
+            continue;
+        }
+        if !result.choices.contains_key(&cid) {
+            return Err(format!("Class {} not found in choices", cid));
+        }
+        let nid = &result.choices[&cid];
+        for child in in_egraph[nid].children.iter() {
+            netlist.graph.add_edge(class_to_nid[&cid].clone(), class_to_nid[in_egraph.nid_to_cid(child)], ());
+        }
+
+        for child in &in_egraph[nid].children {
+            todo.push_back(in_egraph.nid_to_cid(child).clone());
+        }
+    }
+    Ok(netlist)
 }
 
 pub fn serialized_egraph_to_egg<L, A>(egraph: &SerializedEGraph) -> (EGraph<L, A>, Vec<Id>)
@@ -153,16 +186,19 @@ where
 pub fn choose_result_in_egraph(
     in_egraph: &SerializedEGraph,
     result: &ExtractionResult,
-) -> Option<SerializedEGraph> {
+) -> Result<SerializedEGraph, String> {
     use egraph_serialize::*;
     let mut out_egraph = EGraph::default();
-    let mut todo: Vec<ClassId> = in_egraph.root_eclasses.to_vec();
+    out_egraph.root_eclasses = in_egraph.root_eclasses.clone();
+    let mut todo: VecDeque<ClassId> = in_egraph.root_eclasses.clone().into();
     let mut visited: FxHashSet<ClassId> = Default::default();
-    while let Some(cid) = todo.pop() {
+    while let Some(cid) = todo.pop_front() {
         if !visited.insert(cid.clone()) {
             continue;
         }
-        assert!(result.choices.contains_key(&cid));
+        if !result.choices.contains_key(&cid) {
+            return Err(format!("Class {} not found in choices", cid));
+        }
         let nid = &result.choices[&cid];
         out_egraph.add_node(
             nid.to_string(),
@@ -178,11 +214,11 @@ pub fn choose_result_in_egraph(
             },
         );
 
-        for child in &in_egraph[&result.choices[&cid]].children {
-            todo.push(in_egraph.nid_to_cid(child).clone());
+        for child in &in_egraph[nid].children {
+            todo.push_back(in_egraph.nid_to_cid(child).clone());
         }
     }
-    Some(out_egraph)
+    Ok(out_egraph)
 }
 
 #[cfg(test)]

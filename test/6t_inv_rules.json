@@ -1,0 +1,81 @@
+{
+  "rewrites": [
+    {
+      "name": "Double_INVx1",
+      "searcher": "(INVx1_ASAP7_6t_L (INVx1_ASAP7_6t_L ?A))",
+      "applier": "?A"
+    },
+    {
+      "name": "AND2x2_NAND2x1",
+      "searcher": "(AND2x2_ASAP7_6t_L ?A ?B)",
+      "applier": "(INVx1_ASAP7_6t_L (NAND2x1_ASAP7_6t_L ?A ?B))",
+      "bidirectional": true
+    },
+    {
+      "name": "NAND2x1_AND2x2",
+      "searcher": "(NAND2x1_ASAP7_6t_L ?A ?B)",
+      "applier": "(INVx1_ASAP7_6t_L (AND2x2_ASAP7_6t_L ?A ?B))",
+      "bidirectional": true
+    },
+    {
+      "name": "AND3x1_NAND3x1",
+      "searcher": "(AND3x1_ASAP7_6t_L ?A ?B ?C)",
+      "applier": "(INVx1_ASAP7_6t_L (NAND3x1_ASAP7_6t_L ?A ?B ?C))",
+      "bidirectional": true
+    },
+    {
+      "name": "NAND3x1_AND3x1",
+      "searcher": "(NAND3x1_ASAP7_6t_L ?A ?B ?C)",
+      "applier": "(INVx1_ASAP7_6t_L (AND3x1_ASAP7_6t_L ?A ?B ?C))",
+      "bidirectional": true
+    },
+    {
+      "name": "AO21x1_AOI21x1",
+      "searcher": "(AO21x1_ASAP7_6t_L ?A1 ?A2 ?B)",
+      "applier": "(INVx1_ASAP7_6t_L (AOI21x1_ASAP7_6t_L ?A1 ?A2 ?B))",
+      "bidirectional": true
+    },
+    {
+      "name": "AOI21x1_AO21x1",
+      "searcher": "(AOI21x1_ASAP7_6t_L ?A1 ?A2 ?B)",
+      "applier": "(INVx1_ASAP7_6t_L (AO21x1_ASAP7_6t_L ?A1 ?A2 ?B))",
+      "bidirectional": true
+    },
+    {
+      "name": "OR2x2_NOR2x1",
+      "searcher": "(OR2x2_ASAP7_6t_L ?A ?B)",
+      "applier": "(INVx1_ASAP7_6t_L (NOR2x1_ASAP7_6t_L ?A ?B))",
+      "bidirectional": true
+    },
+    {
+      "name": "NOR2x1_OR2x2",
+      "searcher": "(NOR2x1_ASAP7_6t_L ?A ?B)",
+      "applier": "(INVx1_ASAP7_6t_L (OR2x2_ASAP7_6t_L ?A ?B))",
+      "bidirectional": true
+    },
+    {
+      "name": "OR3x1_NOR3x1",
+      "searcher": "(OR3x1_ASAP7_6t_L ?A ?B ?C)",
+      "applier": "(INVx1_ASAP7_6t_L (NOR3x1_ASAP7_6t_L ?A ?B ?C))",
+      "bidirectional": true
+    },
+    {
+      "name": "NOR3x1_OR3x1",
+      "searcher": "(NOR3x1_ASAP7_6t_L ?A ?B ?C)",
+      "applier": "(INVx1_ASAP7_6t_L (OR3x1_ASAP7_6t_L ?A ?B ?C))",
+      "bidirectional": true
+    },
+    {
+      "name": "XOR2x2_XNOR2x2",
+      "searcher": "(XOR2x2_ASAP7_6t_L ?A ?B)",
+      "applier": "(INVx1_ASAP7_6t_L (XNOR2x2_ASAP7_6t_L ?A ?B))",
+      "bidirectional": true
+    },
+    {
+      "name": "XNOR2x2_XOR2x2",
+      "searcher": "(XNOR2x2_ASAP7_6t_L ?A ?B)",
+      "applier": "(INVx1_ASAP7_6t_L (XOR2x2_ASAP7_6t_L ?A ?B))",
+      "bidirectional": true
+    }
+  ]
+}
