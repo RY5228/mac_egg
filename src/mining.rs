@@ -2,28 +2,34 @@ use crate::SerializedEGraph;
 use crate::io::liberty::Library;
 use egraph_serialize::ClassId;
 use indexmap::IndexMap;
-use itertools::Itertools;
+use itertools::{Itertools, sorted};
 use libertyparse::PinDirection;
-use petgraph::Graph;
+use petgraph::algo::toposort;
 use petgraph::graph::NodeIndex;
-use petgraph::visit::NodeRef;
+use petgraph::prelude::EdgeRef;
+use petgraph::visit::{IntoNeighbors, NodeRef, VisitMap, Visitable, depth_first_search};
+use petgraph::{Graph, Incoming};
 use rustc_hash::FxHashMap;
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fmt;
 use std::iter::zip;
+use std::ops::ControlFlow;
 
+/// EClass or ENode (with cell type)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NodeLabel {
-    Class,
-    Node(String),
+    EClass,
+    ENode(String),
 }
-
+/// EClass -> ENode: Output pin. ENode -> EClass: Input pin.
 pub type EdgeLabel = String;
 
 impl fmt::Display for NodeLabel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Class => write!(f, "Class"),
-            Self::Node(name) => write!(f, "Node_{}", name),
+            Self::EClass => write!(f, "Class"),
+            Self::ENode(name) => write!(f, "Node_{}", name),
         }
     }
 }
@@ -50,22 +56,53 @@ pub struct DFSEdge {
 
 // impl DFSEdge {
 //     pub fn new(
-//         src_id: PatternId,
-//         src_label: &str,
-//         src_pin: &str,
-//         dst_id: PatternId,
-//         dst_label: &str,
-//         dst_pin: &str,
+//         i: PatternId,
+//         j: PatternId,
+//         label_i: NodeLabel,
+//         label_ij: String,
+//         label_j: NodeLabel,
 //     ) -> Self {
 //         Self {
-//             i: src_id,
-//             j: dst_id,
-//             label_i: src_label.into(),
-//             label_ij: (src_pin.into(), dst_pin.into()),
-//             label_j: dst_label.into(),
+//             i,
+//             j,
+//             label_i,
+//             label_ij,
+//             label_j,
 //         }
 //     }
 // }
+
+macro_rules! dfs_edge {
+    ($from:literal, $to:literal, $class:expr, $label:literal, $node:ident($inner:literal)) => {
+        DFSEdge {
+            i: $from,
+            j: $to,
+            label_i: $class,
+            label_ij: $label.into(),
+            label_j: $node($inner.into()),
+        }
+    };
+
+    ($from:literal, $to:literal, $node:ident($inner:literal), $label:literal, $class:expr) => {
+        DFSEdge {
+            i: $from,
+            j: $to,
+            label_i: $node($inner.into()),
+            label_ij: $label.into(),
+            label_j: $class,
+        }
+    };
+
+    ($from:literal, $to:literal, $label_i:expr, $label_ij:expr, $label_j:expr) => {
+        DFSEdge {
+            i: $from,
+            j: $to,
+            label_i: $label_i,
+            label_ij: $label_ij,
+            label_j: $label_j,
+        }
+    };
+}
 
 impl fmt::Display for DFSEdge {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -112,6 +149,80 @@ impl DFSCode {
             );
         }
         graph
+    }
+
+    pub fn is_min(&self) -> bool {
+        if self.edges.len() == 1 {
+            return true;
+        }
+        let graph = self.to_graph();
+        // ensure DAG
+        toposort(&graph, None).unwrap();
+        let roots = graph
+            .node_indices()
+            .filter(|&n| graph.neighbors_directed(n, Incoming).count() == 0)
+            .collect_vec();
+        assert_eq!(roots.len(), 1);
+        let root = roots[0];
+        // depth_first_search()
+        let mut discovered: HashMap<NodeIndex, PatternId> = Default::default();
+        let mut time = 0;
+        let mut edge_count = 0;
+        self.dfs_compare(&graph, root, &mut discovered, &mut time, &mut edge_count)
+    }
+
+    /// True: self is min currently
+    fn dfs_compare(
+        &self,
+        graph: &Graph<NodeLabel, EdgeLabel>,
+        u: NodeIndex,
+        discovered: &mut HashMap<NodeIndex, PatternId>,
+        // finished: &mut impl VisitMap<NodeId>,
+        time: &mut PatternId,
+        edge_count: &mut usize,
+    ) -> bool {
+        if let Entry::Vacant(entry) = discovered.entry(u) {
+            let timestamp = *time;
+            entry.insert(timestamp);
+            *time += 1;
+            for (_, v, el) in graph
+                .edges(u)
+                .map(|e| {
+                    let v = e.target();
+                    (
+                        (
+                            *discovered.get(&v).unwrap_or(time),
+                            &graph[u],
+                            e.weight(),
+                            &graph[v],
+                        ),
+                        v,
+                        e.weight(),
+                    )
+                })
+                .sorted_by_key(|x| x.0)
+            {
+                let dfs_edge = DFSEdge {
+                    i: timestamp,
+                    j: *discovered.get(&v).unwrap_or(time),
+                    label_i: graph[u].clone(),
+                    label_ij: el.clone(),
+                    label_j: graph[v].clone(),
+                };
+                let cnt = *edge_count;
+                *edge_count += 1;
+                if dfs_edge < self.edges[cnt] {
+                    return false;
+                }
+
+                if !discovered.contains_key(&v) {
+                    if !self.dfs_compare(graph, v, discovered, time, edge_count) {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
     }
 }
 
@@ -168,7 +279,7 @@ impl GSpan {
                     out_pins.len(),
                     cell_name
                 )
-                .to_string());
+                    .to_string());
             }
             let out_pin = out_pins[0].clone();
             let in_pins = pins
@@ -191,12 +302,12 @@ impl GSpan {
         let class_map: IndexMap<_, _> = egraph
             .classes()
             .iter()
-            .map(|(id, _)| (id.clone(), graph.add_node(NodeLabel::Class)))
+            .map(|(id, _)| (id.clone(), graph.add_node(NodeLabel::EClass)))
             .collect();
         let node_map: IndexMap<_, _> = egraph
             .nodes
             .iter()
-            .map(|(id, n)| (id.clone(), graph.add_node(NodeLabel::Node(n.op.clone()))))
+            .map(|(id, n)| (id.clone(), graph.add_node(NodeLabel::ENode(n.op.clone()))))
             .collect();
         for (cid, class) in egraph.classes() {
             for nid in &class.nodes {
@@ -204,31 +315,42 @@ impl GSpan {
                 let to = node_map[nid];
                 let label = lib_pins
                     .get(&egraph[nid].op)
-                    .ok_or(format!("{} is not in lib", &egraph[nid].op).to_string())?
-                    .0
-                    .clone();
-                graph.add_edge(from, to, label);
+                    .map_or(String::new(), |x| x.0.clone()); // assume no label if not in lib
+                // .ok_or(format!("{} is not in lib", &egraph[nid].op).to_string())?
+                // .0
+                // .clone();
+
+                graph.add_edge(from, to, label); // eclass -> enode: output pin
             }
         }
         for (nid, node) in egraph.nodes.iter() {
-            let num_inputs_got = node.children.len();
-            let num_inputs_should = lib_pins
-                .get(&node.op)
-                .ok_or(format!("{} is not in lib", &egraph[nid].op).to_string())?
-                .1
-                .len();
-            if num_inputs_got != num_inputs_should {
-                return Err(format!(
-                    "Got {} inputs for cell {} should be {}",
-                    num_inputs_got, &node.op, num_inputs_should
-                )
-                .to_string());
-            }
-            for (child, pin) in zip(&node.children, &lib_pins[&node.op].1) {
-                let from = node_map[nid];
-                let to = class_map[egraph.nid_to_cid(child)];
-                let label = pin.clone();
-                graph.add_edge(from, to, label);
+            if lib_pins.contains_key(&node.op) {
+                let num_inputs_got = node.children.len();
+                let num_inputs_should = lib_pins[&node.op].1.len();
+                // .get(&node.op)
+                // .ok_or(format!("{} is not in lib", &egraph[nid].op).to_string())?
+                // .1
+                // .len();
+                if num_inputs_got != num_inputs_should {
+                    return Err(format!(
+                        "Got {} inputs for cell {} should be {}",
+                        num_inputs_got, &node.op, num_inputs_should
+                    )
+                        .to_string());
+                }
+                for (child, pin) in zip(&node.children, &lib_pins[&node.op].1) {
+                    let from = node_map[nid];
+                    let to = class_map[egraph.nid_to_cid(child)];
+                    let label = pin.clone();
+                    graph.add_edge(from, to, label); // enode -> eclass: input pin
+                }
+            } else {
+                // assume no label if not in lib
+                for child in node.children.iter() {
+                    let from = node_map[nid];
+                    let to = class_map[egraph.nid_to_cid(child)];
+                    graph.add_edge(from, to, String::new()); // enode -> eclass: input pin
+                }
             }
         }
         Ok(graph)
@@ -250,7 +372,7 @@ impl GSpan {
         self.graph
             .raw_edges()
             .iter()
-            .filter(|e| self.graph[e.source()] == NodeLabel::Class)
+            .filter(|e| self.graph[e.source()] == NodeLabel::EClass)
             .for_each(|e| {
                 let dfs_edge = DFSEdge {
                     i: 0,
@@ -294,7 +416,70 @@ impl GSpan {
             .collect()
     }
 
-    fn subgraph_mining(&mut self, code: &DFSCode, projections: Vec<Projection>) {
+    fn subgraph_mining(&mut self, code: &DFSCode, projections: Vec<Projection>) {}
+}
 
+mod test {
+    use super::*;
+    use NodeLabel::{EClass, ENode};
+    #[test]
+    fn test_dfs_code_is_min() {
+        let suppose_min_dfs_code = DFSCode {
+            edges: vec![
+                dfs_edge!(0, 1, EClass, "Y", ENode("XOR")),
+                dfs_edge!(1, 2, ENode("XOR"), "A", EClass),
+                dfs_edge!(2, 3, EClass, "Y", ENode("AND")),
+                dfs_edge!(3, 4, ENode("AND"), "A", EClass),
+                dfs_edge!(4, 5, EClass, "", ENode("a")),
+                dfs_edge!(3, 6, ENode("AND"), "B", EClass),
+                dfs_edge!(6, 7, EClass, "", ENode("b")),
+                dfs_edge!(1, 8, ENode("XOR"), "B", EClass),
+                dfs_edge!(8, 9, EClass, "Y", ENode("OR")),
+                dfs_edge!(9, 6, ENode("OR"), "A", EClass),
+                dfs_edge!(9, 10, ENode("OR"), "B", EClass),
+                dfs_edge!(10, 11, EClass, "", ENode("c")),
+            ]
+        };
+        assert!(suppose_min_dfs_code.is_min());
     }
+
+    #[test]
+    fn test_dfs_code_is_not_min() {
+        let mut suppose_not_min_dfs_code = DFSCode {
+            edges: vec![
+                dfs_edge!(0, 1, EClass, "Y", ENode("XOR")),
+                dfs_edge!(1, 2, ENode("XOR"), "A", EClass),
+                dfs_edge!(2, 3, EClass, "Y", ENode("AND")),
+                dfs_edge!(3, 4, ENode("AND"), "A", EClass),
+                dfs_edge!(4, 5, EClass, "", ENode("a")),
+                dfs_edge!(3, 6, ENode("AND"), "B", EClass),
+                dfs_edge!(6, 7, EClass, "", ENode("b")),
+                dfs_edge!(1, 8, ENode("XOR"), "B", EClass),
+                dfs_edge!(8, 9, EClass, "Y", ENode("OR")),
+                dfs_edge!(9, 10, ENode("OR"), "B", EClass),
+                dfs_edge!(10, 11, EClass, "", ENode("c")),
+                dfs_edge!(9, 6, ENode("OR"), "A", EClass),
+            ]
+        };
+        assert!(!suppose_not_min_dfs_code.is_min());
+        suppose_not_min_dfs_code = DFSCode {
+            edges: vec![
+                dfs_edge!(0, 1, EClass, "Y", ENode("XOR")),
+                dfs_edge!(1, 2, ENode("XOR"), "A", EClass),
+                dfs_edge!(2, 3, EClass, "Y", ENode("AND")),
+                dfs_edge!(3, 4, ENode("AND"), "B", EClass),
+                dfs_edge!(4, 5, EClass, "", ENode("b")),
+                dfs_edge!(3, 6, ENode("AND"), "A", EClass),
+                dfs_edge!(6, 7, EClass, "", ENode("a")),
+                dfs_edge!(1, 8, ENode("XOR"), "B", EClass),
+                dfs_edge!(8, 9, EClass, "Y", ENode("OR")),
+                dfs_edge!(9, 4, ENode("OR"), "A", EClass),
+                dfs_edge!(9, 10, ENode("OR"), "B", EClass),
+                dfs_edge!(10, 11, EClass, "", ENode("c")),
+            ]
+        };
+        assert!(!suppose_not_min_dfs_code.is_min());
+    }
+
+
 }
