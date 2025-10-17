@@ -74,6 +74,7 @@ fn test_mul32() {
     );
     let runner = Runner::default()
         .with_egraph(egraph_roots.egraph)
+        .with_node_limit(30000)
         .run(&rules);
     let s = egg_to_serialized_egraph(&runner.egraph, &egraph_roots.roots);
     let mut extractors = extractor::extractors();

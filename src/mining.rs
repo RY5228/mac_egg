@@ -12,7 +12,7 @@ use petgraph::prelude::{EdgeIndex, EdgeRef};
 use petgraph::visit::{
     EdgeCount, IntoEdges, IntoNeighbors, NodeRef, VisitMap, Visitable, depth_first_search,
 };
-use petgraph::{Directed, Graph, Incoming};
+use petgraph::{Directed, Graph, Incoming, Outgoing};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cmp::Reverse;
 use std::collections::hash_map::Entry;
@@ -384,6 +384,66 @@ impl DFSCode {
         graph: &Graph<NodeLabel, EdgeLabel>,
     ) -> Option<Acyclic<Graph<NodeLabel, EdgeLabel>>> {
         Acyclic::try_from(graph.clone()).ok()
+    }
+
+    pub fn to_blif(&self, name: &str) -> String {
+        let graph = self.to_graph();
+        let mut nets = IndexMap::new();
+        let mut roots = vec![];
+        let mut leaves = vec![];
+        for n in graph.node_indices() {
+            if let NodeLabel::EClass = graph[n] {
+                if graph.neighbors_directed(n, Incoming).count() == 0 {
+                    roots.push(n);
+                } else if graph.neighbors(n).count() == 0 {
+                    leaves.push(n);
+                } else {
+                    nets.insert(n, format!("n{}", nets.len()));
+                }
+            }
+        }
+
+        if roots.len() == 1 {
+            nets.insert(roots[0], "Y".to_string());
+        } else {
+            for (i, &n) in roots.iter().enumerate() {
+                nets.insert(n, format!("Y{}", i));
+            }
+        }
+        let outputs = roots.iter().map(|n| &nets[n]).join(" ");
+
+        if leaves.len() == 1 {
+            nets.insert(leaves[0], "A".to_string());
+        } else if leaves.len() <= 24 {
+            for (i, &n) in leaves.iter().enumerate() {
+                nets.insert(n, (('A' as u8 + i as u8) as char).to_string());
+            }
+        } else {
+            for (i, &n) in leaves.iter().enumerate() {
+                nets.insert(n, format!("A{}", i));
+            }
+        }
+        let inputs = leaves.iter().map(|n| &nets[n]).join(" ");
+
+        let mut blif = format!(".model {name}\n");
+        blif += format!(".inputs {inputs}\n").as_str();
+        blif += format!(".output {outputs}\n").as_str();
+        for n in graph.node_indices() {
+            if let NodeLabel::ENode(op) = &graph[n] {
+                let mut pins = vec![];
+                for e in graph.edges(n) {
+                    pins.push(format!("{}={}", e.weight(), nets[&e.target()]));
+                }
+                assert_eq!(graph.edges_directed(n, Incoming).count(), 1);
+                for e in graph.edges_directed(n, Incoming) {
+                    pins.push(format!("{}={}", e.weight(), nets[&e.source()]));
+                }
+                pins.sort();
+                blif += format!(".subckt {} {}\n", op, pins.join(" ")).as_str();
+            }
+        }
+        blif += ".end\n";
+        blif
     }
 }
 
@@ -1032,6 +1092,13 @@ mod test {
                 .unwrap()
                 .join("log/test_mul32_map_genus_inv_dmg_rules.log"),
             format!("{:#?}", gspan.frequent_patterns),
+        )
+        .unwrap();
+        fs::write(
+            env::current_dir()
+                .unwrap()
+                .join("blif/test_mul32_map_genus_inv_dmg_rules_1.blif"),
+            gspan.frequent_patterns[0].0.to_blif("top"),
         )
         .unwrap();
     }
