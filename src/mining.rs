@@ -40,7 +40,7 @@ impl fmt::Display for NodeLabel {
     }
 }
 
-struct GSpan {
+pub struct GSpan {
     egraph: SerializedEGraph,
     library: Library,
     min_support: usize,
@@ -855,11 +855,24 @@ impl GSpan {
                 }
             }));
     }
+
+    pub fn top_frequent_patterns(&self, top: usize) -> Vec<&(DFSCode, usize)> {
+        self.frequent_patterns
+            .iter()
+            .sorted_by(|a, b| Ord::cmp(&b.1, &a.1))
+            .take(top)
+            .collect()
+    }
+    
+    pub fn frequent_patterns(&self) -> &Vec<(DFSCode, usize)> {
+        &self.frequent_patterns
+    }
 }
 
 mod test {
     use super::*;
     use NodeLabel::{EClass, ENode};
+    use egg::StopReason::Saturated;
 
     #[test]
     fn test_dfs_code_is_min() {
@@ -1099,6 +1112,101 @@ mod test {
                 .unwrap()
                 .join("blif/test_mul32_map_genus_inv_dmg_rules_1.blif"),
             gspan.frequent_patterns[0].0.to_blif("top"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_mul32_comm() {
+        use crate::egraph_roots::EGraphRoots;
+        use crate::io::liberty::{get_direction_of_pins, read_liberty};
+        use crate::io::stdcell::read_verilog_with_lib_to_netlist;
+        use crate::language::StdCellLanguage;
+        use crate::rule::JsonRules;
+        use crate::{egg_to_serialized_egraph, netlist_to_egg_roots};
+        use egg::Runner;
+        use petgraph::dot::Dot;
+        use std::env;
+        use std::fs;
+
+        let liberty = read_liberty("test/asap7sc6t_SELECT_LVT_TT_nldm.lib").unwrap();
+        let lib = get_direction_of_pins(&liberty).unwrap();
+        let (netlist, name) =
+            read_verilog_with_lib_to_netlist("test/mul32_map_genus.v", lib.clone()).unwrap();
+        assert_eq!(name, "Multiplier");
+        let egraph_roots: EGraphRoots<_, ()> = netlist_to_egg_roots(&netlist).unwrap();
+        let mut rules =
+            JsonRules::from_path(env::current_dir().unwrap().join("test/6t_inv_rules.json"))
+                .unwrap()
+                .into_egg_rules::<StdCellLanguage>()
+                .unwrap();
+        rules.extend(
+            JsonRules::from_path(env::current_dir().unwrap().join("test/6t_dmg_rules.json"))
+                .unwrap()
+                .into_egg_rules::<StdCellLanguage>()
+                .unwrap(),
+        );
+        rules.extend(
+            JsonRules::from_path(env::current_dir().unwrap().join("test/6t_comm_rules.json"))
+                .unwrap()
+                .into_egg_rules::<StdCellLanguage>()
+                .unwrap(),
+        );
+        println!("{}", egraph_roots.egraph.total_number_of_nodes());
+        let runner = Runner::default()
+            .with_egraph(egraph_roots.egraph)
+            .with_node_limit(30000)
+            .run(&rules);
+        println!("{:?}", runner.stop_reason);
+        println!("{}", runner.egraph.total_number_of_nodes());
+        assert!(if let Some(Saturated) = runner.stop_reason {
+            true
+        } else {
+            false
+        });
+        // return;
+        let s = egg_to_serialized_egraph(&runner.egraph, &egraph_roots.roots);
+        s.to_json_file(
+            env::current_dir()
+                .unwrap()
+                .join("json/test_mul32_map_genus_inv_dmg_comm_rules.json"),
+        )
+        .unwrap();
+        let mut gspan = GSpan::new(s, lib, 10, 5, 3).unwrap();
+
+        let fancy_dot = Dot::new(&gspan.graph);
+        fs::write(
+            env::current_dir()
+                .unwrap()
+                .join("dot/test_mul32_map_genus_inv_dmg_comm_rules.dot"),
+            format!("{:?}", fancy_dot),
+        )
+        .unwrap();
+        let frequent_edges = gspan.find_frequent_edges();
+        println!("{}", frequent_edges.len());
+        let projections = gspan.build_initial_projections(&frequent_edges[0]);
+        println!("{}", projections.len());
+        gspan.mine();
+        // println!("patterns = {:#?}", gspan.frequent_patterns);
+        println!("{}", gspan.frequent_patterns.len());
+        fs::write(
+            env::current_dir()
+                .unwrap()
+                .join("log/test_mul32_map_genus_inv_dmg_comm_rules.log"),
+            format!("{:#?}", gspan.frequent_patterns),
+        )
+        .unwrap();
+        let mut blif = String::new();
+        for (i, (code, freq)) in gspan.top_frequent_patterns(5).iter().enumerate() {
+            blif += format!("# freq = {}\n", freq).as_str();
+            blif += code.to_blif(format!("mult32_{i}").as_str()).as_str();
+            blif += "\n";
+        }
+        fs::write(
+            env::current_dir()
+                .unwrap()
+                .join("blif/test_mul32_map_genus_inv_dmg_comm_rules.blif"),
+            blif,
         )
         .unwrap();
     }

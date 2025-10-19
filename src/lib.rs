@@ -5,7 +5,7 @@ pub mod io;
 pub mod language;
 pub mod netlist;
 pub mod rule;
-mod mining;
+pub mod mining;
 
 use std::collections::VecDeque;
 use crate::egraph_roots::EGraphRoots;
