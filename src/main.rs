@@ -54,7 +54,7 @@ fn main() {
 
     let liberty = read_liberty(args.library).unwrap();
     let lib = get_direction_of_pins(&liberty).unwrap();
-    let (netlist, name) = read_verilog_with_lib_to_netlist(args.input, lib.clone()).unwrap();
+    let (netlist, _) = read_verilog_with_lib_to_netlist(args.input, lib.clone()).unwrap();
     let egraph_roots: EGraphRoots<_, ()> = netlist_to_egg_roots(&netlist).unwrap();
     let mut rules = JsonRules::from_path(manifest_dir.join("test/6t_inv_rules.json"))
         .unwrap()
@@ -108,7 +108,7 @@ fn main() {
     for (i, (code, support)) in gspan.top_frequent_patterns(args.top_k).iter().enumerate() {
         let mut blif = String::new();
         blif += format!("# support = {}\n", support).as_str();
-        blif += code.to_blif(format!("fused_cell_{i}").as_str()).as_str();
+        blif += code.to_blif(format!("FUSED_CELL_{i}").as_str()).as_str();
         blif += "\n";
         let blif_path = args.output.join(format!("{i}.blif"));
         fs::write(&blif_path, blif).unwrap();
