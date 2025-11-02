@@ -9,10 +9,10 @@ use nom::{
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated},
 };
+use rustc_hash::FxHashSet;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::str::FromStr;
-use rustc_hash::FxHashSet;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Wire<'a> {
@@ -82,9 +82,16 @@ fn skip_white_spaces1(input: &str) -> IResult<&str, &str> {
 }
 
 fn identifier(input: &str) -> IResult<&str, &str> {
-    recognize(pair(
-        alt((alpha1, tag("_"))),
-        many0(alt((alphanumeric1, tag("_")))),
+    alt((
+        recognize(pair(
+            alt((alpha1, tag("_"))),
+            many0(alt((alphanumeric1, tag("_")))),
+        )),
+        recognize((
+            char('\\'),
+            alt((alpha1, tag("_"))),
+            many0(alt((alphanumeric1, tag("_"), tag("["), tag("]")))),
+        )),
     ))
     .parse(input)
 }
@@ -310,7 +317,7 @@ fn module_body(input: &str) -> IResult<&str, ModuleBody> {
         }
     }
     body.wires = wire_vec;
-    
+
     Ok((remaining, body))
 }
 
