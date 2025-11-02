@@ -27,6 +27,9 @@ struct Args {
     /// Directory of the outputs
     #[arg(short, long, value_name = "DIR")]
     output: PathBuf,
+    /// Paths of rule files (.json)
+    #[arg(short, long, value_name = "FILE")]
+    rules: Vec<PathBuf>,
     /// Min support
     #[arg(long, default_value_t = 10)]
     min_support: usize,
@@ -39,6 +42,15 @@ struct Args {
     /// TopK frequent subcircuits
     #[arg(long, default_value_t = 10)]
     top_k: usize,
+    /// Node limitation for e-graph
+    #[arg(long, default_value_t = 1_000_000)]
+    egraph_node_limit: usize,
+    /// Iteration limitation for e-graph
+    #[arg(long, default_value_t = 100)]
+    egraph_iter_limit: usize,
+    /// Time limitation (second) for e-graph
+    #[arg(long, default_value_t = 30)]
+    egraph_time_limit: u64,
     /// Verbose log
     #[command(flatten)]
     verbose: Verbosity,
@@ -46,7 +58,7 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let manifest_dir: PathBuf = env::var("CARGO_MANIFEST_DIR").unwrap().into();
+    // let manifest_dir: PathBuf = env::var("CARGO_MANIFEST_DIR").unwrap().into();
 
     env_logger::Builder::new()
         .filter_level(args.verbose.log_level_filter())
@@ -56,31 +68,40 @@ fn main() {
     let lib = get_direction_of_pins(&liberty).unwrap();
     let (netlist, _) = read_verilog_with_lib_to_netlist(args.input, lib.clone()).unwrap();
     let egraph_roots: EGraphRoots<_, ()> = netlist_to_egg_roots(&netlist).unwrap();
-    let mut rules = JsonRules::from_path(manifest_dir.join("test/6t_inv_rules.json"))
-        .unwrap()
-        .into_egg_rules::<StdCellLanguage>()
-        .unwrap();
-    rules.extend(
-        JsonRules::from_path(manifest_dir.join("test/6t_dmg_rules.json"))
-            .unwrap()
-            .into_egg_rules::<StdCellLanguage>()
-            .unwrap(),
-    );
-    rules.extend(
-        JsonRules::from_path(manifest_dir.join("test/6t_comm_rules.json"))
-            .unwrap()
-            .into_egg_rules::<StdCellLanguage>()
-            .unwrap(),
-    );
+    // let mut rules = JsonRules::from_path(manifest_dir.join("test/6t_inv_rules.json"))
+    //     .unwrap()
+    //     .into_egg_rules::<StdCellLanguage>()
+    //     .unwrap();
+    // rules.extend(
+    //     JsonRules::from_path(manifest_dir.join("test/6t_dmg_rules.json"))
+    //         .unwrap()
+    //         .into_egg_rules::<StdCellLanguage>()
+    //         .unwrap(),
+    // );
+    // rules.extend(
+    //     JsonRules::from_path(manifest_dir.join("test/6t_comm_rules.json"))
+    //         .unwrap()
+    //         .into_egg_rules::<StdCellLanguage>()
+    //         .unwrap(),
+    // );
     info!(
         "Initial egraph has {} nodes.",
         egraph_roots.egraph.total_number_of_nodes()
     );
+    let mut rules = vec![];
+    for rule_path in &args.rules {
+        rules.extend(
+            JsonRules::from_path(rule_path)
+                .unwrap()
+                .into_egg_rules::<StdCellLanguage>()
+                .unwrap(),
+        )
+    }
     let runner = Runner::default()
         .with_egraph(egraph_roots.egraph)
-        .with_node_limit(1_000_000)
-        .with_iter_limit(100)
-        .with_time_limit(Duration::from_secs(30))
+        .with_node_limit(args.egraph_node_limit)
+        .with_iter_limit(args.egraph_iter_limit)
+        .with_time_limit(Duration::from_secs(args.egraph_time_limit))
         .run(&rules);
     if let Some(Saturated) = runner.stop_reason {
         info!("Stop reason is {:?}.", runner.stop_reason);
