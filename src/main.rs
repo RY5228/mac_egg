@@ -101,12 +101,15 @@ fn main() {
                 .unwrap(),
         )
     }
+    let start = Instant::now();
     let runner = Runner::default()
         .with_egraph(egraph_roots.egraph)
         .with_node_limit(args.egraph_node_limit)
         .with_iter_limit(args.egraph_iter_limit)
         .with_time_limit(Duration::from_secs(args.egraph_time_limit))
         .run(&rules);
+    let duration = start.elapsed();
+    info!("Rewritten egraph in {:.3} seconds.", duration.as_secs_f64());
     if let Some(Saturated) = runner.stop_reason {
         info!("Stop reason is {:?}.", runner.stop_reason);
     } else {
