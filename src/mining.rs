@@ -445,6 +445,22 @@ impl DFSCode {
         blif += ".end\n";
         blif
     }
+
+    pub fn get_area(&self, cell_area: &HashMap<String, f64>) -> f64 {
+        let mut cell_map = HashMap::new();
+        for edge in self.edges.iter() {
+            if let NodeLabel::ENode(t) = &edge.label_i {
+                cell_map.entry(edge.i).or_insert(t);
+            }
+            if let NodeLabel::ENode(t) = &edge.label_j {
+                cell_map.entry(edge.j).or_insert(t);
+            }
+        }
+        cell_map
+            .values()
+            .map(|&t| cell_area.get(t).unwrap_or(&0.0))
+            .sum()
+    }
 }
 
 impl fmt::Display for DFSCode {
@@ -863,7 +879,33 @@ impl GSpan {
             .take(top)
             .collect()
     }
-    
+
+    pub fn top_area_patterns(
+        &self,
+        top: usize,
+        cell_area: HashMap<String, f64>,
+    ) -> Vec<(&DFSCode, usize, f64)> {
+        self.frequent_patterns
+            .iter()
+            .map(|(code, support)| {
+                (code, *support, (*support as f64) * code.get_area(&cell_area))
+            })
+            .sorted_by(|a, b| {
+                let a_area = a.2;
+                let b_area = b.2;
+                match (a_area.is_nan(), b_area.is_nan()) {
+                    (true, true) => std::cmp::Ordering::Equal,
+                    (true, false) => std::cmp::Ordering::Greater, // NaN 排在非NaN之后
+                    (false, true) => std::cmp::Ordering::Less,    // 非NaN 排在NaN之前
+                    (false, false) => b_area
+                        .partial_cmp(&a_area)
+                        .unwrap_or(std::cmp::Ordering::Equal), // 降序：大的在前
+                }
+            })
+            .take(top)
+            .collect()
+    }
+
     pub fn frequent_patterns(&self) -> &Vec<(DFSCode, usize)> {
         &self.frequent_patterns
     }

@@ -12,6 +12,7 @@ use mac_egg::{egg_to_serialized_egraph, netlist_to_egg_roots};
 use std::path::PathBuf;
 use std::time::Duration;
 use std::{env, fs};
+use std::collections::HashMap;
 use mac_egg::mining::GSpan;
 
 /// Standard cell fusion by mining frequent subcircuits with egraph from a standard cell netlist.
@@ -42,6 +43,9 @@ struct Args {
     /// TopK frequent subcircuits
     #[arg(long, default_value_t = 10)]
     top_k: usize,
+    /// Sort by area
+    #[arg(long, value_name = "FILE")]
+    cell_area: Option<PathBuf>,
     /// Node limitation for e-graph
     #[arg(long, default_value_t = 1_000_000)]
     egraph_node_limit: usize,
@@ -126,14 +130,31 @@ fn main() {
     gspan.mine();
     info!("Mined egraph.");
     info!("Got {} frequent patterns.", gspan.frequent_patterns().len());
-    for (i, (code, support)) in gspan.top_frequent_patterns(args.top_k).iter().enumerate() {
-        let mut blif = String::new();
-        blif += format!("# support = {}\n", support).as_str();
-        blif += code.to_blif(format!("FUSED_CELL_{i}").as_str()).as_str();
-        blif += "\n";
-        let blif_path = args.output.join(format!("{i}.blif"));
-        fs::write(&blif_path, blif).unwrap();
-        info!("Wrote subcircuit with support {} to {}, ", support, blif_path.display());
+    let cell_area: Option<HashMap<String, f64>> = args.cell_area.map(|p| {
+        serde_json::from_str(
+            &fs::read_to_string(p).unwrap()
+        ).unwrap()
+    });
+    if let Some(cell_area) = cell_area {
+        for (i, &(code, support, area)) in gspan.top_area_patterns(args.top_k, cell_area).iter().enumerate() {
+            let mut blif = String::new();
+            blif += format!("# support = {}, area = {}\n", support, area).as_str();
+            blif += code.to_blif(format!("FUSED_CELL_{i}").as_str()).as_str();
+            blif += "\n";
+            let blif_path = args.output.join(format!("{i}.blif"));
+            fs::write(&blif_path, blif).unwrap();
+            info!("Wrote subcircuit with support {} and area {} to {}, ", support, area, blif_path.display());
+        }
+    } else {
+        for (i, (code, support)) in gspan.top_frequent_patterns(args.top_k).iter().enumerate() {
+            let mut blif = String::new();
+            blif += format!("# support = {}\n", support).as_str();
+            blif += code.to_blif(format!("FUSED_CELL_{i}").as_str()).as_str();
+            blif += "\n";
+            let blif_path = args.output.join(format!("{i}.blif"));
+            fs::write(&blif_path, blif).unwrap();
+            info!("Wrote subcircuit with support {} to {}, ", support, blif_path.display());
+        }
     }
 }
 
