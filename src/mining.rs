@@ -21,15 +21,16 @@ use std::fmt;
 use std::hash::Hash;
 use std::iter::{Filter, zip};
 use std::ops::{ControlFlow, Index};
+use std::sync::Arc;
 
 /// EClass or ENode (with cell type)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NodeLabel {
     EClass,
-    ENode(String),
+    ENode(Arc<String>),
 }
 /// EClass -> ENode: Output pin. ENode -> EClass: Input pin.
-pub type EdgeLabel = String;
+pub type EdgeLabel = Arc<String>;
 
 impl fmt::Display for NodeLabel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -44,7 +45,7 @@ pub struct GSpan {
     egraph: SerializedEGraph,
     library: Library,
     min_support: usize,
-    lib_pins: IndexMap<String, (String, Vec<String>)>,
+    lib_pins: IndexMap<Arc<String>, (Arc<String>, Vec<Arc<String>>)>,
     graph: Graph<NodeLabel, EdgeLabel>,
     frequent_patterns: Vec<(DFSCode, usize)>,
     max_size: usize,
@@ -59,7 +60,7 @@ pub struct DFSEdge {
     pub i: PatternId,
     pub j: PatternId,
     pub label_i: NodeLabel,
-    pub label_ij: String,
+    pub label_ij: Arc<String>,
     pub label_j: NodeLabel,
 }
 
@@ -87,8 +88,8 @@ macro_rules! dfs_edge {
             i: $from,
             j: $to,
             label_i: $class,
-            label_ij: $label.into(),
-            label_j: $node($inner.into()),
+            label_ij: Arc::new($label.into()),
+            label_j: $node(Arc::new($inner.into())),
         }
     };
 
@@ -96,8 +97,8 @@ macro_rules! dfs_edge {
         DFSEdge {
             i: $from,
             j: $to,
-            label_i: $node($inner.into()),
-            label_ij: $label.into(),
+            label_i: $node(Arc::new($inner.into())),
+            label_ij: Arc::new($label.into()),
             label_j: $class,
         }
     };
@@ -282,7 +283,7 @@ impl DFSCode {
         graph_cache: Option<&Graph<NodeLabel, EdgeLabel>>,
         max_size: usize,
         max_num_inputs: usize,
-        lib_pins: &IndexMap<String, (String, Vec<String>)>,
+        lib_pins: &IndexMap<Arc<String>, (Arc<String>, Vec<Arc<String>>)>,
     ) -> DFSCodeConstraint {
         if self.edges.len() == 1 {
             // println!("Only one edge");
@@ -327,7 +328,7 @@ impl DFSCode {
                         // println!("ENode as leaf");
                         not_yet = true;
                     } else {
-                        if let Some((_, pins)) = lib_pins.get(op) {
+                        if let Some((_, pins)) = lib_pins.get(op.as_ref()) {
                             if num_neighbors > pins.len() {
                                 return DFSCodeConstraint::Violate;
                             } else if num_neighbors < pins.len() {
@@ -458,7 +459,7 @@ impl DFSCode {
         }
         cell_map
             .values()
-            .map(|&t| cell_area.get(t).unwrap_or(&0.0))
+            .map(|&t| cell_area.get(t.as_ref()).unwrap_or(&0.0))
             .sum()
     }
 }
@@ -548,7 +549,7 @@ impl GSpan {
 
     fn construct_lib_pins(
         library: &Library,
-    ) -> Result<IndexMap<String, (String, Vec<String>)>, String> {
+    ) -> Result<IndexMap<Arc<String>, (Arc<String>, Vec<Arc<String>>)>, String> {
         let mut lib_pins = IndexMap::default();
         for (cell_name, pins) in library {
             let out_pins = pins
@@ -566,22 +567,22 @@ impl GSpan {
                 )
                 .to_string());
             }
-            let out_pin = out_pins[0].clone();
+            let out_pin = out_pins[0].clone().into();
             let in_pins = pins
                 .iter()
                 .filter_map(|(n, d)| match d {
-                    PinDirection::I => Some(n.clone()),
+                    PinDirection::I => Some(n.clone().into()),
                     _ => None,
                 })
                 .collect_vec();
-            lib_pins.insert(cell_name.clone(), (out_pin, in_pins));
+            lib_pins.insert(cell_name.clone().into(), (out_pin, in_pins));
         }
         Ok(lib_pins)
     }
 
     fn construct_graph(
         egraph: &SerializedEGraph,
-        lib_pins: &IndexMap<String, (String, Vec<String>)>,
+        lib_pins: &IndexMap<Arc<String>, (Arc<String>, Vec<Arc<String>>)>,
     ) -> Result<Graph<NodeLabel, EdgeLabel>, String> {
         let mut graph = Graph::new();
         let class_map: IndexMap<_, _> = egraph
@@ -592,7 +593,7 @@ impl GSpan {
         let node_map: IndexMap<_, _> = egraph
             .nodes
             .iter()
-            .map(|(id, n)| (id.clone(), graph.add_node(NodeLabel::ENode(n.op.clone()))))
+            .map(|(id, n)| (id.clone(), graph.add_node(NodeLabel::ENode(n.op.clone().into()))))
             .collect();
         for (cid, class) in egraph.classes() {
             for nid in &class.nodes {
@@ -600,7 +601,7 @@ impl GSpan {
                 let to = node_map[nid];
                 let label = lib_pins
                     .get(&egraph[nid].op)
-                    .map_or(String::new(), |x| x.0.clone()); // assume no label if not in lib
+                    .map_or(Arc::new(String::new()), |x| x.0.clone()); // assume no label if not in lib
                 // .ok_or(format!("{} is not in lib", &egraph[nid].op).to_string())?
                 // .0
                 // .clone();
@@ -634,7 +635,7 @@ impl GSpan {
                 for child in node.children.iter() {
                     let from = node_map[nid];
                     let to = class_map[egraph.nid_to_cid(child)];
-                    graph.add_edge(from, to, String::new()); // enode -> eclass: input pin
+                    graph.add_edge(from, to, Arc::new(String::new())); // enode -> eclass: input pin
                 }
             }
         }
