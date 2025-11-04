@@ -10,7 +10,7 @@ use mac_egg::language::StdCellLanguage;
 use mac_egg::rule::JsonRules;
 use mac_egg::{egg_to_serialized_egraph, netlist_to_egg_roots};
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{env, fs};
 use std::collections::HashMap;
 use mac_egg::mining::GSpan;
@@ -126,9 +126,11 @@ fn main() {
     s.to_json_file(&rewritten_egraph_path).unwrap();
     info!("Wrote rewritten egraph to {}", rewritten_egraph_path.display());
 
+    let start = Instant::now();
     let mut gspan = GSpan::new(s, lib, args.min_support, args.max_size, args.max_num_inputs).unwrap();
     gspan.mine();
-    info!("Mined egraph.");
+    let duration = start.elapsed();
+    info!("Mined egraph in {:.3} seconds.", duration.as_secs_f64());
     info!("Got {} frequent patterns.", gspan.frequent_patterns().len());
     let cell_area: Option<HashMap<String, f64>> = args.cell_area.map(|p| {
         serde_json::from_str(
