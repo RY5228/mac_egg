@@ -5,6 +5,7 @@ use egraph_serialize::ClassId;
 use indexmap::{IndexMap, IndexSet};
 use itertools::{Itertools, sorted};
 use libertyparse::PinDirection;
+use log::info;
 use petgraph::acyclic::Acyclic;
 use petgraph::algo::toposort;
 use petgraph::graph::{Edge, EdgeReference, Edges, NodeIndex};
@@ -428,7 +429,7 @@ impl DFSCode {
 
         let mut blif = format!(".model {name}\n");
         blif += format!(".inputs {inputs}\n").as_str();
-        blif += format!(".output {outputs}\n").as_str();
+        blif += format!(".outputs {outputs}\n").as_str();
         for n in graph.node_indices() {
             if let NodeLabel::ENode(op) = &graph[n] {
                 let mut pins = vec![];
@@ -645,12 +646,17 @@ impl GSpan {
     pub fn mine(&mut self) {
         let frequent_edges = self.find_frequent_edges();
 
-        for edge in frequent_edges {
+        let totol_num = frequent_edges.len();
+        
+        info!("Found {} frequent edges.", totol_num);
+
+        for (i, edge) in frequent_edges.iter().enumerate() {
             let mut code = DFSCode::default();
             code.edges.push(edge.clone());
-            let projections = self.build_initial_projections(&edge);
+            let projections = self.build_initial_projections(edge);
             self.subgraph_mining(&code, projections);
-            self.finish_edge(&edge);
+            self.finish_edge(edge);
+            info!("Mined {} / {} edges.", i + 1, totol_num);
         }
     }
 
@@ -719,6 +725,7 @@ impl GSpan {
             DFSCodeConstraint::Satisfied => {
                 self.frequent_patterns
                     .push((code.clone(), projections.len()));
+                info!("Got {} frequent patterns.", self.frequent_patterns.len());
                 // println!("Satisfied");
             }
             DFSCodeConstraint::NotYet => {
